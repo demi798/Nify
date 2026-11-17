@@ -1,0 +1,10 @@
+# 运行日志（保留 log/ 目录）
+log/*.log
+.env
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+data/
