@@ -66,7 +66,7 @@ nify/
     src/
       app/                  # 含 routes.tsx
       shared/               # api-client、公共组件
-      modules/<同名>/
+      views/<同名>/          # 前端业务视图（与后端 modules 7 名对齐）
 ```
 
 ### 1.1 一期仅允许 7 个业务模块
@@ -206,7 +206,7 @@ conversation/router → ConversationService.chat
 ### 1.7 前端
 
 ```text
-frontend/src/modules/<module>/
+frontend/src/views/<module>/
   pages/  components/  api.ts  types.ts  hooks.ts(可选)  index.ts
 ```
 
@@ -368,6 +368,7 @@ UNIQUE KEY uk_xxx_ws_name (workspace_id, alive_name)
 | `identity_users` | `uk_users_email (email)` |
 | `identity_workspace_members` | `uk_members_ws_user (workspace_id, user_id)`；`idx_members_user (user_id)` |
 | `model_provider_providers` | `idx_provider_ws (workspace_id, created_at)` |
+| `model_provider_models` | `uk_mpm_provider_key (provider_id, model_key)`；`idx_mpm_ws_provider (workspace_id, provider_id, created_at)` |
 | `agent_agents` | `idx_agent_ws_created (workspace_id, created_at, id)` |
 | `conversation_conversations` | `idx_conv_ws_created (workspace_id, created_at, id)`；`idx_conv_ws_agent (workspace_id, agent_id, created_at)` |
 | `conversation_messages` | `idx_msg_ws_conv_created (workspace_id, conversation_id, created_at, id)` |
@@ -545,7 +546,7 @@ WHERE 强制：业务查询带 `workspace_id`（登录查邮箱除外）；软�
 
 **架构**
 
-- [ ] 落在正确 `modules/<name>/`，前后端同名  
+- [ ] 落在正确路径：后端 `modules/<name>/`、前端 `views/<name>/`，7 名对齐  
 - [ ] router 只调本模块 service；跨模块仅 Service 公开方法且在白名单  
 - [ ] 无禁止目录名；无直连厂商 SDK  
 - [ ] JSON 接口成功/失败均为 `{code,message,data}`；成功 `ApiResult.ok`；失败靠 `AppError`+handler  

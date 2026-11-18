@@ -1,3 +1,11 @@
+@import "./styles/tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body,
 #root {
@@ -5,15 +13,560 @@ body,
   min-height: 100%;
 }
 
+html {
+  color-scheme: light;
+}
+
 body {
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    "Noto Sans",
-    sans-serif;
-  background: #f5f5f5;
+  font-family: var(--nify-font-sans);
+  font-size: var(--nify-text-md);
+  line-height: var(--nify-leading-normal);
+  font-weight: var(--nify-weight-regular);
+  color: var(--nify-text-primary);
+  background: var(--nify-bg-canvas);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: var(--nify-text-link);
+  transition: var(--nify-transition-colors);
+}
+
+a:hover {
+  color: var(--nify-text-link-hover);
+}
+
+::selection {
+  background: var(--nify-primary-100);
+  color: var(--nify-primary-900);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--nify-shadow-focus);
+}
+
+/* ---------- 应用壳 ---------- */
+
+.nify-shell {
+  min-height: 100vh;
+  background: var(--nify-bg-canvas);
+}
+
+.nify-sider {
+  background: var(--color-bg-dark) !important;
+  border-right: 1px solid var(--nify-sidebar-border);
+  position: relative;
+  z-index: var(--nify-z-sidebar);
+}
+
+.nify-sider::before {
+  /* 极淡主色光晕，科技感点缀，不干扰阅读 */
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 180px;
+  background: radial-gradient(
+    ellipse 80% 70% at 20% 0%,
+    rgba(99, 102, 241, 0.18),
+    transparent 70%
+  );
+  opacity: 0.9;
+}
+
+.nify-sider .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.nify-brand {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding: var(--nify-space-5) var(--nify-space-5) var(--nify-space-4);
+  border-bottom: 1px solid var(--nify-sidebar-border);
+}
+
+.nify-brand--collapsed {
+  justify-content: center;
+  padding-inline: var(--nify-space-2);
+}
+
+.nify-brand__text {
+  min-width: 0;
+}
+
+.nify-brand__name {
+  font-family: var(--nify-font-display);
+  font-size: 22px;
+  font-weight: var(--nify-weight-bold);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  background: linear-gradient(
+    120deg,
+    var(--nify-primary-300) 0%,
+    var(--nify-primary-500) 45%,
+    var(--nify-accent-400) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.nify-brand--collapsed .nify-brand__name {
+  font-size: 18px;
+}
+
+.nify-brand__tagline {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: var(--nify-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--nify-sidebar-text-muted);
+}
+
+.nify-sider__menu {
+  flex: 1;
+  overflow: auto;
+  padding: var(--nify-space-3) var(--nify-space-2);
+}
+
+.nify-sider .ant-menu-dark {
+  background: transparent !important;
+  border-inline-end: none !important;
+}
+
+.nify-sider .ant-menu-dark.ant-menu-inline .ant-menu-item,
+.nify-sider .ant-menu-dark.ant-menu-inline-collapsed .ant-menu-item {
+  margin-inline: 0;
+  margin-block: 2px;
+  width: 100%;
+  height: 40px;
+  line-height: 40px;
+  border-radius: var(--nify-radius-md);
+  color: #fff !important;
+  background: transparent !important;
+  transition: var(--nify-transition-panel);
+}
+
+.nify-sider .ant-menu-dark .ant-menu-item .anticon {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.72);
+  transition: var(--nify-transition-colors);
+}
+
+.nify-sider .ant-menu-dark.ant-menu-inline .ant-menu-item:hover,
+.nify-sider .ant-menu-dark.ant-menu-inline-collapsed .ant-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+.nify-sider .ant-menu-dark .ant-menu-item:hover .anticon,
+.nify-sider .ant-menu-dark .ant-menu-item-selected .anticon {
+  color: #fff;
+}
+
+.nify-sider .ant-menu-dark .ant-menu-item-selected {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+  box-shadow: inset 3px 0 0 var(--nify-primary-500);
+}
+
+.nify-sider__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nify-space-2);
+  padding: var(--nify-space-3) var(--nify-space-3) var(--nify-space-4);
+  border-top: 1px solid var(--nify-sidebar-border);
+}
+
+.nify-sider.ant-layout-sider-collapsed .nify-sider__footer {
+  flex-direction: column;
+  justify-content: center;
+}
+
+.nify-sider__collapse {
+  color: rgba(255, 255, 255, 0.75) !important;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--nify-radius-md);
+  transition: var(--nify-transition-panel);
+}
+
+.nify-sider__collapse:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.nify-sider__version {
+  font-family: var(--nify-font-mono);
+  font-size: 11px;
+  color: var(--nify-sidebar-text-muted) !important;
+  letter-spacing: 0.02em;
+}
+
+.nify-sider__version--compact {
+  font-size: 10px;
+}
+
+.nify-main {
+  background: var(--color-bg-secondary);
+  min-width: 0;
+}
+
+.nify-header {
+  height: var(--nify-header-height) !important;
+  line-height: var(--nify-header-height) !important;
+  padding-inline: var(--nify-page-padding) !important;
+  background: var(--nify-bg-surface) !important;
+  border-bottom: 1px solid var(--nify-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nify-gap);
+  position: sticky;
+  top: 0;
+  z-index: var(--nify-z-header);
+}
+
+.nify-header__breadcrumb {
+  flex: 1;
+  min-width: 0;
+}
+
+.nify-header__breadcrumb .ant-breadcrumb-link,
+.nify-header__breadcrumb a {
+  color: var(--nify-text-secondary);
+}
+
+.nify-header__breadcrumb a:hover {
+  color: var(--nify-primary);
+}
+
+.nify-header__user {
+  flex-shrink: 0;
+}
+
+.nify-header__avatar {
+  background: linear-gradient(
+    135deg,
+    var(--nify-primary-500),
+    var(--nify-primary-700)
+  ) !important;
+  color: #fff !important;
+}
+
+.nify-header__user-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.nify-header__user-name {
+  font-size: var(--nify-text-sm);
+  font-weight: var(--nify-weight-semibold);
+  color: var(--nify-text-primary);
+}
+
+.nify-header__user-role {
+  font-size: 11px;
+  color: var(--nify-text-tertiary);
+}
+
+.nify-content {
+  margin: 0;
+  padding: var(--nify-page-padding);
+  background: var(--color-bg-secondary);
+  min-height: calc(100vh - var(--nify-header-height));
+}
+
+.nify-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nify-gap);
+}
+
+.nify-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--nify-gap);
+}
+
+.nify-page-header__main {
+  min-width: 0;
+}
+
+.nify-page-header__title {
+  margin: 0;
+  font-family: var(--nify-font-display);
+  font-size: var(--nify-text-2xl);
+  font-weight: var(--nify-weight-semibold);
+  letter-spacing: -0.02em;
+  color: var(--nify-text-primary);
+  line-height: var(--nify-leading-tight);
+}
+
+.nify-page-header__desc {
+  margin: 6px 0 0;
+  font-size: var(--nify-text-sm);
+  color: var(--nify-text-secondary);
+  line-height: var(--nify-leading-normal);
+}
+
+.nify-page-header__extra {
+  display: flex;
+  align-items: center;
+  gap: var(--nify-space-2);
+  flex-shrink: 0;
+}
+
+.nify-page-card {
+  background: var(--nify-bg-surface);
+  border: 1px solid var(--nify-border-subtle);
+  border-radius: var(--nify-radius-lg);
+  box-shadow: var(--nify-shadow-sm);
+  padding: var(--nify-card-padding);
+  min-height: 280px;
+}
+
+.nify-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nify-gap);
+}
+
+.nify-stack-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nify-gap);
+}
+
+/* ---------- 独立登录 / 注册页（系统壳外） ---------- */
+
+.nify-auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(
+      900px 480px at 12% -10%,
+      color-mix(in srgb, var(--nify-primary-400) 18%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      700px 420px at 100% 0%,
+      color-mix(in srgb, var(--nify-accent, #0d9488) 12%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(180deg, #0b1220 0%, #111827 48%, #0f172a 100%);
+}
+
+.nify-auth-screen__panel {
+  width: min(420px, 100%);
+}
+
+.nify-auth-screen__brand {
+  text-align: center;
+  margin-bottom: 28px;
+  color: #f8fafc;
+}
+
+.nify-auth-screen__logo {
+  font-family: var(--nify-font-display, var(--nify-font-sans));
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.nify-auth-screen__tagline {
+  margin: 8px 0 0;
+  color: rgba(248, 250, 252, 0.55);
+  font-size: var(--nify-text-sm);
+}
+
+.nify-auth-screen__card {
+  background: #fff;
+  border-radius: var(--nify-radius-lg, 16px);
+  padding: 28px 28px 22px;
+  box-shadow: 0 24px 48px rgba(2, 6, 23, 0.28);
+}
+
+.nify-auth-screen__title.ant-typography {
+  margin: 0 0 4px !important;
+  color: var(--nify-text-primary) !important;
+}
+
+.nify-auth-screen__desc.ant-typography {
+  margin-bottom: 20px !important;
+}
+
+.nify-auth-screen__footer {
+  margin: 18px 0 0;
+  text-align: center;
+  color: var(--nify-text-secondary);
+  font-size: var(--nify-text-sm);
+}
+
+.nify-table-row--active > td {
+  background: color-mix(in srgb, var(--nify-primary-100) 70%, transparent) !important;
+}
+
+/* ---------- 按钮变体 ---------- */
+
+.nify-btn-primary.ant-btn,
+.ant-btn.nify-btn-primary {
+  color: #fff !important;
+  border: none !important;
+  background: linear-gradient(
+    135deg,
+    var(--nify-primary-400) 0%,
+    var(--nify-primary-600) 55%,
+    var(--nify-primary-700) 100%
+  ) !important;
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.22);
+  transition: var(--nify-transition-panel);
+}
+
+.nify-btn-primary.ant-btn:hover,
+.ant-btn.nify-btn-primary:hover {
+  color: #fff !important;
+  filter: brightness(1.05);
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.28);
+}
+
+.nify-btn-secondary.ant-btn,
+.ant-btn.nify-btn-secondary {
+  color: var(--nify-text-primary) !important;
+  background: #fff !important;
+  border: 1px solid var(--nify-border-default) !important;
+  box-shadow: var(--nify-shadow-xs);
+}
+
+.nify-btn-secondary.ant-btn:hover,
+.ant-btn.nify-btn-secondary:hover {
+  color: var(--nify-primary) !important;
+  border-color: var(--nify-primary-300) !important;
+  background: var(--nify-primary-soft) !important;
+}
+
+.nify-btn-danger.ant-btn,
+.ant-btn.nify-btn-danger {
+  color: #fff !important;
+  border: none !important;
+  background: var(--nify-error) !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.22);
+}
+
+.nify-btn-danger.ant-btn:hover,
+.ant-btn.nify-btn-danger:hover {
+  color: #fff !important;
+  filter: brightness(1.05);
+}
+
+/* Ant Design primary 默认也走渐变，统一观感 */
+.nify-content .ant-btn-primary:not(.ant-btn-dangerous):not(.nify-btn-secondary) {
+  border: none;
+  background: linear-gradient(
+    135deg,
+    var(--nify-primary-400) 0%,
+    var(--nify-primary-600) 55%,
+    var(--nify-primary-700) 100%
+  );
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.2);
+}
+
+.nify-content .ant-btn-primary:not(.ant-btn-dangerous):not(.nify-btn-secondary):hover {
+  filter: brightness(1.05);
+}
+
+.nify-content .ant-btn-default {
+  background: #fff;
+  border-color: var(--nify-border-default);
+}
+
+.nify-content .ant-btn-dangerous.ant-btn-primary {
+  background: var(--nify-error);
+  border-color: var(--nify-error);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+}
+
+/* ---------- 公共组件 ---------- */
+
+.nify-table .ant-table {
+  background: transparent;
+}
+
+.nify-table .ant-pagination {
+  margin-bottom: 0;
+}
+
+.nify-form-dialog .ant-modal-content {
+  border-radius: var(--nify-radius-lg);
+  box-shadow: var(--nify-shadow-lg);
+}
+
+.nify-form-dialog__form .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.nify-confirm-modal .ant-modal-confirm-btns {
+  margin-top: var(--nify-gap);
+}
+
+.nify-notify {
+  border-radius: var(--nify-radius-md);
+}
+
+/* ---------- 通用工具类 ---------- */
+
+.nify-muted {
+  color: var(--nify-text-secondary);
+}
+
+.nify-caption {
+  color: var(--nify-text-tertiary);
+  font-size: var(--nify-text-sm);
+}
+
+.nify-mono {
+  font-family: var(--nify-font-mono);
+  font-size: var(--nify-text-sm);
+}
+
+.nify-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--nify-radius-full);
+  display: inline-block;
+  background: var(--nify-accent);
+  box-shadow: 0 0 0 3px var(--nify-accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

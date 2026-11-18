@@ -22,7 +22,15 @@ export class ApiClientError extends Error {
 }
 
 const TOKEN_KEY = "nify_access_token";
+const WORKSPACE_KEY = "nify_workspace_id";
+const USER_KEY = "nify_user";
 const baseURL = import.meta.env.VITE_API_BASE_URL || "/api";
+
+export type StoredUser = {
+  id: string;
+  email: string;
+  display_name: string;
+};
 
 export function getAccessToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -34,6 +42,43 @@ export function setAccessToken(token: string | null): void {
   } else {
     localStorage.removeItem(TOKEN_KEY);
   }
+}
+
+export function getWorkspaceId(): string | null {
+  return localStorage.getItem(WORKSPACE_KEY);
+}
+
+export function setWorkspaceId(workspaceId: string | null): void {
+  if (workspaceId) {
+    localStorage.setItem(WORKSPACE_KEY, workspaceId);
+  } else {
+    localStorage.removeItem(WORKSPACE_KEY);
+  }
+}
+
+export function getStoredUser(): StoredUser | null {
+  const raw = localStorage.getItem(USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredUser;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredUser(user: StoredUser | null): void {
+  if (user) {
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(USER_KEY);
+  }
+}
+
+/** 退出登录：清 token / 用户 / 工作区 */
+export function clearAuthSession(): void {
+  setAccessToken(null);
+  setStoredUser(null);
+  setWorkspaceId(null);
 }
 
 export async function apiRequest<T>(
@@ -57,6 +102,11 @@ export async function apiRequest<T>(
   const token = getAccessToken();
   if (token && !headers.Authorization) {
     headers.Authorization = `Bearer ${token}`;
+  }
+
+  const workspaceId = getWorkspaceId();
+  if (workspaceId && !headers["X-Workspace-Id"]) {
+    headers["X-Workspace-Id"] = workspaceId;
   }
 
   const response = await fetch(url, {
@@ -91,6 +141,13 @@ export async function getJson<T>(path: string): Promise<T> {
 export async function postJson<T>(path: string, data?: unknown): Promise<T> {
   return apiRequest<T>(path, {
     method: "POST",
+    body: data === undefined ? undefined : JSON.stringify(data),
+  });
+}
+
+export async function putJson<T>(path: string, data?: unknown): Promise<T> {
+  return apiRequest<T>(path, {
+    method: "PUT",
     body: data === undefined ? undefined : JSON.stringify(data),
   });
 }

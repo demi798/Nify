@@ -56,23 +56,55 @@ CREATE TABLE IF NOT EXISTS `identity_workspace_members` (
 -- model_provider
 -- ---------------------------------------------------------------------------
 
+-- 提供商连接实例（鉴权 / Base URL / 健康态）
 CREATE TABLE IF NOT EXISTS `model_provider_providers` (
-  `id`                  CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'UUID v7',
-  `workspace_id`        CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
-  `name`                VARCHAR(128) NOT NULL COMMENT '展示名称',
-  `provider`            VARCHAR(32)  NOT NULL COMMENT 'openai / claude / gemini / ollama 等',
-  `base_url`            VARCHAR(512) NULL COMMENT '可选自定义 API Base',
-  `api_key_encrypted`   VARCHAR(512) NOT NULL COMMENT '加密后的密钥，禁止明文',
-  `default_model`       VARCHAR(128) NOT NULL COMMENT '默认模型名',
-  `config`              JSON NULL COMMENT '额外厂商配置',
-  `is_enabled`          TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
-  `created_by`          CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
-  `created_at`          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `updated_at`          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  `id`                      CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'UUID v7',
+  `workspace_id`            CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+  `name`                    VARCHAR(128) NOT NULL COMMENT '展示名称',
+  `provider_type`           VARCHAR(32)  NOT NULL COMMENT 'openai / openai_compatible / claude / gemini / ollama',
+  `base_url`                VARCHAR(512) NULL COMMENT '可选自定义 API Base；空则用类型默认',
+  `auth_scheme`             VARCHAR(32)  NOT NULL DEFAULT 'api_key' COMMENT 'api_key / api_key_header / none',
+  `credentials_encrypted`   VARCHAR(1024) NOT NULL COMMENT '加密后的凭证 JSON，禁止明文',
+  `auth_extra`              JSON NULL COMMENT '非机密鉴权参数（如 anthropic-version）',
+  `default_model_key`       VARCHAR(128) NULL COMMENT '默认模型 key（与 models 表双写）',
+  `config`                  JSON NULL COMMENT '超时等额外配置',
+  `is_enabled`              TINYINT(1) NOT NULL DEFAULT 1 COMMENT '用户开关',
+  `health_status`           VARCHAR(16) NOT NULL DEFAULT 'UNKNOWN' COMMENT 'UNKNOWN / UP / DOWN',
+  `health_checked_at`       DATETIME(3) NULL COMMENT '最近探测时间 UTC',
+  `health_latency_ms`       INT NULL COMMENT '探测耗时毫秒',
+  `health_error_code`       VARCHAR(32) NULL COMMENT '映射后的错误码',
+  `health_message`          VARCHAR(512) NULL COMMENT '健康探测短文案',
+  `health_fail_count`       INT NOT NULL DEFAULT 0 COMMENT '连续连通失败次数',
+  `health_last_success_at`  DATETIME(3) NULL COMMENT '最近一次连通成功时间 UTC',
+  `created_by`              CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+  `created_at`              DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at`              DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
   KEY `idx_provider_ws` (`workspace_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC
-  COMMENT='模型提供商：密钥与默认模型';
+  COMMENT='模型提供商：连接实例与健康态';
+
+-- 某提供商下的模型目录
+CREATE TABLE IF NOT EXISTS `model_provider_models` (
+  `id`                 CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'UUID v7',
+  `workspace_id`       CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+  `provider_id`        CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+  `model_key`          VARCHAR(128) NOT NULL COMMENT '厂商模型 ID',
+  `display_name`       VARCHAR(128) NOT NULL COMMENT '展示名',
+  `modality`           VARCHAR(32)  NOT NULL DEFAULT 'chat' COMMENT 'chat / embedding',
+  `context_window`     INT NULL,
+  `max_output_tokens`  INT NULL,
+  `capabilities`       JSON NULL COMMENT 'tools/vision/json_mode/streaming',
+  `is_default`         TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为该 Provider 默认模型',
+  `is_enabled`         TINYINT(1) NOT NULL DEFAULT 1,
+  `status`             VARCHAR(32) NOT NULL DEFAULT 'available' COMMENT 'available/deprecated/unavailable',
+  `created_at`         DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at`         DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_mpm_provider_key` (`provider_id`, `model_key`),
+  KEY `idx_mpm_ws_provider` (`workspace_id`, `provider_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC
+  COMMENT='模型提供商：模型目录';
 
 -- ---------------------------------------------------------------------------
 -- agent
@@ -85,10 +117,12 @@ CREATE TABLE IF NOT EXISTS `agent_agents` (
   `description`          VARCHAR(512) NULL,
   `system_prompt`        TEXT NULL COMMENT '系统提示词',
   `model_provider_id`    CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT '绑定的 provider',
-  `model_name`           VARCHAR(128) NOT NULL COMMENT '选用模型名',
+  `model_name`           VARCHAR(128) NOT NULL COMMENT '选用模型名（model_key）',
+  `model_config_id`      CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT '模型目录项 UUID',
   `knowledge_base_ids`   JSON NULL COMMENT '绑定知识库 UUID 列表',
-  `mcp_server_ids`       JSON NULL COMMENT '绑定 MCP 服务 UUID 列表',
-  `config`               JSON NULL COMMENT '温度等生成参数',
+  `mcp_server_ids`       JSON NULL COMMENT '绑定 MCP 服务 UUID 列表（与 agent_tool_bindings 同步冗余）',
+  `config`               JSON NULL COMMENT 'temperature/max_tokens/max_context_turns 等',
+  `is_enabled`           TINYINT(1) NOT NULL DEFAULT 1 COMMENT '用户开关',
   `created_by`           CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
   `deleted_at`           DATETIME(3) NULL COMMENT '软删时间；非空表示已删',
   `alive_name`           VARCHAR(128)
@@ -98,9 +132,25 @@ CREATE TABLE IF NOT EXISTS `agent_agents` (
   `updated_at`           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_agent_ws_name` (`workspace_id`, `alive_name`),
-  KEY `idx_agent_ws_created` (`workspace_id`, `created_at`, `id`)
+  KEY `idx_agent_ws_created` (`workspace_id`, `created_at`, `id`),
+  KEY `idx_agent_ws_model_config` (`workspace_id`, `model_config_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC
   COMMENT='Agent：提示词与工具/知识库绑定';
+
+-- Agent ↔ MCP 工具绑定（N:M；跨模块禁止 FK，仅存 UUID）
+CREATE TABLE IF NOT EXISTS `agent_tool_bindings` (
+  `id`             CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'UUID v7',
+  `workspace_id`   CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+  `agent_id`       CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+  `mcp_server_id`  CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT '对应 toolIds',
+  `created_at`     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at`     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_agent_tool` (`agent_id`, `mcp_server_id`),
+  KEY `idx_agent_tool_ws_mcp` (`workspace_id`, `mcp_server_id`),
+  KEY `idx_agent_tool_ws_agent` (`workspace_id`, `agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC
+  COMMENT='Agent 工具绑定（mcp_server_id）';
 
 -- ---------------------------------------------------------------------------
 -- conversation

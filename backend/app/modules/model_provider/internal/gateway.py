@@ -174,7 +174,8 @@ class LLMGateway:
                     )
                     return
                 except asyncio.CancelledError:
-                    # 不可吞掉；不记熔断失败（客户端主动取消）
+                    # 不可吞掉；不记熔断失败（客户端主动取消）。
+                    # 健康巡检标记 DOWN 不得触发此处取消；仅新请求入口拒绝。
                     logger.info(
                         "llm stream cancelled provider=%s model=%s attempt=%s emitted=%s",
                         provider_key,

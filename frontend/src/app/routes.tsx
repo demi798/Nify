@@ -1,21 +1,45 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "@/app/layout";
-import { IdentityHomePage } from "@/modules/identity";
-import { ModelProviderHomePage } from "@/modules/model_provider";
-import { AgentHomePage } from "@/modules/agent";
-import { ConversationHomePage } from "@/modules/conversation";
-import { KnowledgeHomePage } from "@/modules/knowledge";
-import { WorkflowHomePage } from "@/modules/workflow";
-import { McpHomePage } from "@/modules/mcp";
+import { RequireAuth } from "@/app/RequireAuth";
+import {
+  IdentityHomePage,
+  LoginPage,
+  RegisterPage,
+} from "@/views/identity";
+import { ModelProviderHomePage } from "@/views/model_provider";
+import { AgentHomePage } from "@/views/agent";
+import { ConversationHomePage } from "@/views/conversation";
+import { KnowledgeHomePage } from "@/views/knowledge";
+import { WorkflowHomePage } from "@/views/workflow";
+import { McpHomePage } from "@/views/mcp";
+import { getAccessToken } from "@/shared/api-client";
+
+/** 根路径：已登录进系统，未登录进登录页 */
+function RootRedirect() {
+  return (
+    <Navigate to={getAccessToken() ? "/conversation" : "/login"} replace />
+  );
+}
 
 /** 统一路由配置（CLAUDE.md：routes.tsx） */
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<AppLayout />}>
-        <Route index element={<Navigate to="/identity" replace />} />
-        <Route path="identity" element={<IdentityHomePage />} />
+      {/* 系统外：登录 / 注册 */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
+      {/* 系统内：需登录 */}
+      <Route
+        path="/"
+        element={
+          <RequireAuth>
+            <AppLayout />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<RootRedirect />} />
+        <Route path="identity" element={<IdentityHomePage />} />
         <Route path="model-providers" element={<ModelProviderHomePage />} />
         <Route path="agents" element={<AgentHomePage />} />
         <Route path="conversation" element={<ConversationHomePage />} />
@@ -23,7 +47,8 @@ export function AppRoutes() {
         <Route path="workflows" element={<WorkflowHomePage />} />
         <Route path="mcp" element={<McpHomePage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+
+      <Route path="*" element={<RootRedirect />} />
     </Routes>
   );
 }

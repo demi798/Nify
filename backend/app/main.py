@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import logging
 
 import uvicorn
 from fastapi import FastAPI
@@ -20,22 +21,40 @@ from app.core.logging import RequestContextMiddleware, setup_logging
 from app.core.redis_client import close_redis, init_redis
 from app.core.response import AppJSONResponse, configure_datetime_serialization
 from app.core.storage import get_file_storage
+from app.modules.identity.internal.seed import ensure_demo_account
+from app.modules.model_provider.adapters import register_default_adapters
+from app.modules.model_provider.internal.health_scheduler import (
+    start_provider_health_scheduler,
+    stop_provider_health_scheduler,
+)
 from app.modules.model_provider.internal.http_clients import close_all_http_clients
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """启动：日志、ORM、MySQL、Redis、本地 Files；关闭时释放连接。"""
+    """启动：日志、ORM、MySQL、Redis、Files、adapters、演示账号、健康巡检；关闭时释放。"""
     setup_logging()
     configure_datetime_serialization()
     configure_orm()
     init_engine()
     await init_redis()
     get_file_storage().ensure_root()
-    yield
-    await close_all_http_clients()
-    await close_redis()
-    await close_engine()
+    register_default_adapters()
+    try:
+        await ensure_demo_account()
+    except Exception:
+        # 库未就绪时不阻断启动（如本地未配 MySQL）
+        logger.exception("seed demo account failed")
+    start_provider_health_scheduler()
+    try:
+        yield
+    finally:
+        await stop_provider_health_scheduler()
+        await close_all_http_clients()
+        await close_redis()
+        await close_engine()
 
 
 def create_app() -> FastAPI:
@@ -51,9 +70,15 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health_router)
     # 业务模块 router（按 CLAUDE.md 白名单逐步挂载）
+    from app.modules.agent import router as agent_router
     from app.modules.identity import router as identity_router
+    from app.modules.mcp import router as mcp_router
+    from app.modules.model_provider import router as model_provider_router
 
     app.include_router(identity_router)
+    app.include_router(model_provider_router)
+    app.include_router(agent_router)
+    app.include_router(mcp_router)
     return app
 
 

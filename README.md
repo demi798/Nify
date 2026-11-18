@@ -36,7 +36,7 @@ nify/
     └── src/
         ├── app/           # 路由与布局
         ├── shared/        # api-client 等
-        └── modules/       # 与后端同名的 7 个业务模块
+        └── views/         # 与后端 modules 同名的 7 个业务视图
 ```
 
 一期业务模块：`identity` · `model_provider` · `agent` · `conversation` · `knowledge` · `workflow` · `mcp`
@@ -46,11 +46,12 @@ nify/
 已具备：
 
 - 后端 `core` 基础设施（`ApiResult`、鉴权 deps、日志/`request_id`、分页、ORM、队列、SSE 工具、LLMGateway 骨架等）
-- 数据库一期 DDL + Alembic 首版迁移
+- 数据库一期 DDL + Alembic 迁移（含 `model_provider` v2）
 - **identity 演示**：注册 / 登录 + 工作区 CRUD（前后端可联调）
+- **model_provider**：Provider/Model CRUD、凭证加密、健康探测、openai/claude/gemini/ollama adapters + Gateway
 - 一键 `make start` / `make stop`
 
-后续按规范推荐顺序推进：`model_provider` → `conversation` SSE → `knowledge` + worker → …
+后续按规范推荐顺序推进：`conversation` SSE → `knowledge` + worker → …
 
 ## 环境要求
 
@@ -89,12 +90,14 @@ cd ..
 
 ### 3. 启动前后端
 
+#### 方式 A：一键启动（推荐）
+
 ```bash
 make start
 ```
 
 - 后端默认：<http://127.0.0.1:8080>（健康检查 `/api/v1/health`，Swagger `/docs`）
-- 前端：Vite 开发服（见终端输出；默认首页跳转工作区 CRUD 演示 `/identity`）
+- 前端：Vite 开发服（见终端输出；默认首页跳转 `/identity`）
 - 日志目录：`backend/log/`
 
 停止：
@@ -104,11 +107,58 @@ make stop
 # 或 ./stop.sh
 ```
 
+#### 方式 B：单独启动后端
+
+在一个终端中：
+
+```bash
+cd backend
+
+# 可选：使用虚拟环境
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+python3 -m pip install -e ".[dev]"
+alembic upgrade head
+
+# 开发态前台运行（Ctrl+C 停止）
+export PYTHONPATH="$(pwd)${PYTHONPATH:+:$PYTHONPATH}"
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+```
+
+- 健康检查：<http://127.0.0.1:8080/api/v1/health>
+- Swagger：<http://127.0.0.1:8080/docs>
+- 端口可通过 `backend/.env` 中 `NIFY_SERVER_PORT` 修改（与 `--port` 保持一致）
+
+#### 方式 C：单独启动前端
+
+在另一个终端中（建议后端已启动，开发代理才会打到 API）：
+
+```bash
+cd frontend
+npm install          # 首次或依赖变更时
+npm run dev
+```
+
+- 默认：<http://127.0.0.1:5173>
+- Vite 已将 `/api` 代理到 `http://localhost:8080`（见 `frontend/vite.config.ts`）
+- 也可设置 `frontend/.env` 中的 `VITE_API_BASE_URL` 指向后端地址
+
+单独停止时，在对应终端按 `Ctrl+C` 即可（与 `make stop` 管理的后台进程互不影响）。
+
 ### 4. 体验 identity CRUD
 
-1. 打开前端「工作区与登录」页  
-2. 注册账号 → 登录  
-3. 创建 / 编辑 / 删除工作区  
+启动且 `NIFY_SEED_DEMO_ACCOUNT=true`（默认）时，会幂等写入测试账号：
+
+| 项 | 值 |
+|----|-----|
+| 邮箱 | `demo@nify.local` |
+| 密码 | `Demo1234!` |
+| 工作区 | `演示工作区`（owner） |
+
+1. 打开 `/login`（未登录访问系统会自动跳转；表单已预填演示账号）  
+2. 登录成功后进入系统；也可 `/register` 注册，完成后回到登录页  
+3. 在「工作区」页点「使用」切换当前工作区；顶栏可退出登录  
 
 接口前缀：
 

@@ -1,0 +1,18 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: nify-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: nify
+      MYSQL_USER: nify
+      MYSQL_PASSWORD: nify
+    ports:
+      # 宿主机 3306 常被占用，映射到 3307；与 backend/.env 的 NIFY_MYSQL_PORT 一致
+      - "3307:3306"
+    volumes:
+      - nify_mysql_data:/var/lib/mysql
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+
+volumes:
+  nify_mysql_data:

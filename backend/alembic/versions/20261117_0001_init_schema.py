@@ -28,6 +28,7 @@ _TABLES = (
     "conversation_messages",
     "conversation_conversations",
     "agent_agents",
+    "model_provider_models",
     "model_provider_providers",
     "identity_workspace_members",
     "identity_workspaces",
@@ -36,14 +37,23 @@ _TABLES = (
 
 
 def _load_table_ddl() -> str:
-    """读取建表 SQL，去掉 CREATE DATABASE / USE。"""
+    """读取建表 SQL，去掉 CREATE DATABASE…; / USE（库由连接串指定）。"""
     sql_path = Path(__file__).resolve().parents[2] / "sql" / "001_init_schema.sql"
     raw = sql_path.read_text(encoding="utf-8")
     lines: list[str] = []
+    skipping_create_db = False
     for line in raw.splitlines():
         stripped = line.strip()
         upper = stripped.upper()
-        if upper.startswith("CREATE DATABASE") or upper.startswith("USE "):
+        if skipping_create_db:
+            # 跳过 CREATE DATABASE 后续行直到分号结束
+            if ";" in stripped:
+                skipping_create_db = False
+            continue
+        if upper.startswith("CREATE DATABASE"):
+            skipping_create_db = ";" not in stripped
+            continue
+        if upper.startswith("USE "):
             continue
         lines.append(line)
     return "\n".join(lines)

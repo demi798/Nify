@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -203,6 +204,22 @@ async def close_engine() -> None:
 
 async def get_session() -> AsyncIterator[AsyncSession]:
     """FastAPI Depends：一请求一 session，结束时统一 commit/rollback。"""
+    if _session_factory is None:
+        raise RuntimeError("数据库引擎未初始化，请先在 lifespan 中调用 init_engine()")
+    session = _session_factory()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
+
+
+@asynccontextmanager
+async def session_context() -> AsyncIterator[AsyncSession]:
+    """非请求路径（启动种子等）使用的 session 作用域。"""
     if _session_factory is None:
         raise RuntimeError("数据库引擎未初始化，请先在 lifespan 中调用 init_engine()")
     session = _session_factory()

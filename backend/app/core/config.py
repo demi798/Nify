@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7
 
+    # ---------- 演示账号（启动幂等种子；生产请关闭）----------
+    seed_demo_account: bool = True
+    demo_email: str = "demo@nify.local"
+    demo_password: str = "Demo1234!"
+    demo_display_name: str = "演示用户"
+    demo_workspace_name: str = "演示工作区"
+
     # ---------- 日志 ----------
     log_level: str = "INFO"
     log_json: bool = False
@@ -68,6 +75,13 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3
     llm_circuit_fail_threshold: int = 5
     llm_circuit_open_sec: float = 30.0
+
+    # ---------- Provider 健康巡检 ----------
+    provider_health_enabled: bool = True
+    provider_health_interval_sec: int = 60
+    provider_health_fail_threshold: int = 3
+    # 运行时凭证短缓存 TTL（秒）；0=禁用缓存。改 Key 时写路径会主动失效。
+    provider_runtime_cache_ttl_sec: int = 30
 
     # ---------- 对象存储（本地 Files；后续可换 S3）----------
     storage_root: str = Field(default="./data/files", description="本地文件根目录")

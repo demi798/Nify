@@ -1,0 +1,181 @@
+/**
+ * Nify 设计系统 Token
+ * 方向：浅底管理后台 + 深色侧栏 + 蓝紫主色科技感 + 青绿辅色状态感
+ * 参考气质：Linear / Supabase — 干净、有层次、不花哨
+ */
+
+:root {
+  /* ---------- Brand：主色 蓝紫（Indigo → Violet 偏蓝）---------- */
+  --nify-primary-50: #eef2ff;
+  --nify-primary-100: #e0e7ff;
+  --nify-primary-200: #c7d2fe;
+  --nify-primary-300: #a5b4fc;
+  --nify-primary-400: #818cf8;
+  --nify-primary-500: #6366f1;
+  --nify-primary-600: #4f46e5;
+  --nify-primary-700: #4338ca;
+  --nify-primary-800: #3730a3;
+  --nify-primary-900: #312e81;
+  --nify-primary: var(--nify-primary-600);
+  --nify-primary-hover: var(--nify-primary-700);
+  --nify-primary-active: var(--nify-primary-800);
+  --nify-primary-soft: var(--nify-primary-50);
+  --nify-primary-border: var(--nify-primary-200);
+
+  /* ---------- Accent：辅色 青绿 / 薄荷（数据 · 状态 · 成功点缀）---------- */
+  --nify-accent-50: #f0fdfa;
+  --nify-accent-100: #ccfbf1;
+  --nify-accent-200: #99f6e4;
+  --nify-accent-300: #5eead4;
+  --nify-accent-400: #2dd4bf;
+  --nify-accent-500: #14b8a6;
+  --nify-accent-600: #0d9488;
+  --nify-accent-700: #0f766e;
+  --nify-accent: var(--nify-accent-500);
+  --nify-accent-hover: var(--nify-accent-600);
+  --nify-accent-soft: var(--nify-accent-50);
+
+  /* ---------- 语义色 ---------- */
+  --nify-success: #10b981;
+  --nify-success-soft: #ecfdf5;
+  --nify-warning: #f59e0b;
+  --nify-warning-soft: #fffbeb;
+  --nify-error: #ef4444;
+  --nify-error-soft: #fef2f2;
+  --nify-info: #3b82f6;
+  --nify-info-soft: #eff6ff;
+
+  /* ---------- 背景色阶（浅底，可读性优先）---------- */
+  --color-bg-secondary: #f1f5f9; /* 内容区浅灰底 */
+  --nify-bg-canvas: var(--color-bg-secondary);
+  --nify-bg-sunken: #eef1f7; /* 凹陷区 / 表格斑马弱对比 */
+  --nify-bg-surface: #ffffff; /* 卡片 / 内容面板 */
+  --nify-bg-elevated: #ffffff; /* 浮层 / 弹层 */
+  --nify-bg-muted: #f1f5f9; /* 次级区块 */
+  --nify-bg-subtle: #eef2ff; /* 主色轻晕染，科技点缀 */
+  --nify-bg-hover: #f8fafc;
+  --nify-bg-active: #eef2ff;
+
+  /* ---------- 布局间距（统一约定）---------- */
+  --nify-page-padding: 24px;
+  --nify-card-padding: 20px;
+  --nify-gap: 16px;
+
+  /* ---------- 深色底（接近纯黑，非纯黑）---------- */
+  --color-bg-dark: #0a0a0f;
+  --color-bg-dark-elevated: #12121a;
+
+  /* ---------- 侧栏（深色底，制造对比与品牌感）---------- */
+  --nify-sidebar-bg: var(--color-bg-dark);
+  --nify-sidebar-bg-elevated: var(--color-bg-dark-elevated);
+  --nify-sidebar-border: rgba(255, 255, 255, 0.06);
+  --nify-sidebar-text: rgba(255, 255, 255, 0.88);
+  --nify-sidebar-text-muted: rgba(255, 255, 255, 0.4);
+  --nify-sidebar-text-active: #ffffff;
+  /* 用户要求：hover / 选中用白色 10% 透明微亮 */
+  --nify-sidebar-item-hover: rgba(255, 255, 255, 0.1);
+  --nify-sidebar-item-active: rgba(255, 255, 255, 0.1);
+  --nify-sidebar-accent: var(--nify-primary-500);
+  --nify-sidebar-width: 240px;
+  --nify-sidebar-collapsed-width: 72px;
+
+  /* ---------- 文字色阶 ---------- */
+  --nify-text-primary: #0f172a;
+  --nify-text-secondary: #475569;
+  --nify-text-tertiary: #94a3b8;
+  --nify-text-disabled: #cbd5e1;
+  --nify-text-inverse: #f8fafc;
+  --nify-text-link: var(--nify-primary-600);
+  --nify-text-link-hover: var(--nify-primary-700);
+
+  /* ---------- 边框 / 分割线 ---------- */
+  --nify-border-subtle: #eef2f7;
+  --nify-border-default: #e2e8f0;
+  --nify-border-strong: #cbd5e1;
+  --nify-border-focus: var(--nify-primary-400);
+
+  /* ---------- 圆角 ---------- */
+  --nify-radius-xs: 4px;
+  --nify-radius-sm: 6px;
+  --nify-radius-md: 8px;
+  --nify-radius-lg: 12px;
+  --nify-radius-xl: 16px;
+  --nify-radius-2xl: 20px;
+  --nify-radius-full: 9999px;
+
+  /* ---------- 阴影（克制，偏 Linear：冷灰 + 极淡主色）---------- */
+  --nify-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --nify-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05),
+    0 1px 3px rgba(15, 23, 42, 0.04);
+  --nify-shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06),
+    0 1px 3px rgba(15, 23, 42, 0.04);
+  --nify-shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.08),
+    0 4px 8px rgba(15, 23, 42, 0.04);
+  --nify-shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.28);
+  --nify-shadow-glow: 0 0 0 1px rgba(99, 102, 241, 0.2),
+    0 8px 24px rgba(79, 70, 229, 0.12);
+
+  /* ---------- 间距（4px 栅格）---------- */
+  --nify-space-1: 4px;
+  --nify-space-2: 8px;
+  --nify-space-3: 12px;
+  --nify-space-4: 16px;
+  --nify-space-5: 20px;
+  --nify-space-6: 24px;
+  --nify-space-8: 32px;
+  --nify-space-10: 40px;
+  --nify-space-12: 48px;
+
+  /* ---------- 字体 ---------- */
+  --nify-font-sans: "Plus Jakarta Sans", "IBM Plex Sans", "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --nify-font-mono: "IBM Plex Mono", "SF Mono", "Menlo", "Consolas", monospace;
+  --nify-font-display: "Plus Jakarta Sans", var(--nify-font-sans);
+
+  --nify-text-xs: 12px;
+  --nify-text-sm: 13px;
+  --nify-text-md: 14px;
+  --nify-text-lg: 16px;
+  --nify-text-xl: 20px;
+  --nify-text-2xl: 24px;
+  --nify-text-3xl: 30px;
+
+  --nify-leading-tight: 1.25;
+  --nify-leading-normal: 1.5;
+  --nify-leading-relaxed: 1.65;
+
+  --nify-weight-regular: 400;
+  --nify-weight-medium: 500;
+  --nify-weight-semibold: 600;
+  --nify-weight-bold: 700;
+
+  /* ---------- 动效（短、稳，管理后台不抢戏）---------- */
+  --nify-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --nify-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --nify-ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --nify-duration-fast: 120ms;
+  --nify-duration-normal: 200ms;
+  --nify-duration-slow: 320ms;
+  --nify-transition-colors: color var(--nify-duration-fast) var(--nify-ease-in-out),
+    background-color var(--nify-duration-fast) var(--nify-ease-in-out),
+    border-color var(--nify-duration-fast) var(--nify-ease-in-out);
+  --nify-transition-transform: transform var(--nify-duration-normal)
+    var(--nify-ease-out);
+  --nify-transition-shadow: box-shadow var(--nify-duration-normal)
+    var(--nify-ease-out);
+  --nify-transition-panel: all var(--nify-duration-normal) var(--nify-ease-out);
+
+  /* ---------- 布局 ---------- */
+  --nify-header-height: 56px;
+  --nify-content-max: 1280px;
+  --nify-z-header: 100;
+  --nify-z-sidebar: 110;
+  --nify-z-dropdown: 1000;
+  --nify-z-modal: 1100;
+  --nify-z-toast: 1200;
+
+  /* ---------- 控件高度 ---------- */
+  --nify-control-height-sm: 28px;
+  --nify-control-height-md: 36px;
+  --nify-control-height-lg: 40px;
+}
