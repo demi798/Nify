@@ -39,7 +39,7 @@ type MenuItem = Required<MenuProps>["items"][number];
 const menuItems: MenuItem[] = [
   { key: "/conversation", icon: <MessageOutlined />, label: "对话" },
   { key: "/agents", icon: <UserOutlined />, label: "Agent" },
-  { key: "/knowledge", icon: <BookOutlined />, label: "知识库" },
+  { key: "/knowledge-bases", icon: <BookOutlined />, label: "知识库" },
   { key: "/workflows", icon: <ApartmentOutlined />, label: "工作流" },
   { key: "/model-providers", icon: <SettingOutlined />, label: "模型" },
   { key: "/mcp", icon: <ApiOutlined />, label: "MCP" },

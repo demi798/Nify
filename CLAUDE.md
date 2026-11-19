@@ -376,6 +376,8 @@ UNIQUE KEY uk_xxx_ws_name (workspace_id, alive_name)
 | `knowledge_documents` | `idx_doc_ws_kb_status (workspace_id, knowledge_base_id, status, created_at)` |
 | `knowledge_chunks` | `idx_chunk_ws_doc (workspace_id, document_id, seq)`；`uk_chunk_milvus (milvus_pk)`；`uk_chunk_doc_seq (document_id, seq)` |
 | `workflow_workflows` | `idx_wf_ws_created (workspace_id, created_at, id)` |
+| `workflow_nodes` | `idx_node_ws_wf (workspace_id, workflow_id, created_at, id)`；`uk_node_wf_key (workflow_id, alive_node_key)` |
+| `workflow_edges` | `idx_edge_ws_wf (workspace_id, workflow_id, created_at, id)`；`uk_edge_wf_key (workflow_id, alive_edge_key)` |
 | `workflow_runs` | `idx_run_ws_wf_created (workspace_id, workflow_id, created_at, id)` |
 | `mcp_servers` | `idx_mcp_ws (workspace_id, created_at)` |
 
@@ -445,8 +447,8 @@ WHERE 强制：业务查询带 `workspace_id`（登录查邮箱除外）；软�
 
 ### 4.9 软删与状态枚举
 
-软删白名单仅：`agent_agents`、`knowledge_bases`、`knowledge_documents`、`workflow_workflows`、`mcp_servers`。  
-消息/切片/运行记录禁止软删。
+软删白名单仅：`agent_agents`、`knowledge_bases`、`knowledge_documents`、`workflow_workflows`、`workflow_nodes`、`workflow_edges`、`mcp_servers`。  
+消息/切片/运行记录禁止软删。节点与边随工作流定义替换时整批软删再插入。
 
 | 列 | 允许值 |
 |----|--------|

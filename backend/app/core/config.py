@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     milvus_embedding_dim: int = 1536
     milvus_enabled: bool = False
 
+    # ---------- Embedding（知识库管线；凭证复用 Provider，不硬编码 Key）----------
+    # 优先选用工作区内 modality=embedding 的启用模型；否则用下方 model_key + 自动选 Provider
+    embedding_model_key: str = "text-embedding-v3"
+    # 可选：固定 Provider UUID；空则自动选启用中的 openai / openai_compatible / fake
+    embedding_provider_id: str | None = None
+
     # ---------- 队列 / worker ----------
     worker_poll_timeout_sec: int = 5
     worker_queues: str = "queue:document_parse"

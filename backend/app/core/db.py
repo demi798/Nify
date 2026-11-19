@@ -41,6 +41,8 @@ SOFT_DELETE_TABLES: frozenset[str] = frozenset(
         "knowledge_bases",
         "knowledge_documents",
         "workflow_workflows",
+        "workflow_nodes",
+        "workflow_edges",
         "mcp_servers",
     }
 )

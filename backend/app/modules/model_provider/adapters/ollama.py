@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from app.modules.model_provider.adapters.base import ChatRequest, StreamDelta
+from app.modules.model_provider.adapters.base import (
+    ChatRequest,
+    ChatResponse,
+    StreamDelta,
+)
 from app.modules.model_provider.constants import DEFAULT_BASE_URLS
 from app.modules.model_provider.internal.openai_compat import (
     auth_headers_for_bearer,
+    chat_completions,
     stream_chat_completions,
 )
 
@@ -28,3 +33,13 @@ class OllamaAdapter:
             headers=headers,
         ):
             yield delta
+
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        base = request.base_url or DEFAULT_BASE_URLS["ollama"]
+        headers = auth_headers_for_bearer(request.api_key or "ollama")
+        return await chat_completions(
+            provider=self.provider,
+            request=request,
+            base_url=base,
+            headers=headers,
+        )

@@ -71,13 +71,19 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     # 业务模块 router（按 CLAUDE.md 白名单逐步挂载）
     from app.modules.agent import router as agent_router
+    from app.modules.conversation import router as conversation_router
     from app.modules.identity import router as identity_router
+    from app.modules.knowledge import router as knowledge_router
     from app.modules.mcp import router as mcp_router
     from app.modules.model_provider import router as model_provider_router
+    from app.modules.workflow import router as workflow_router
 
     app.include_router(identity_router)
     app.include_router(model_provider_router)
     app.include_router(agent_router)
+    app.include_router(conversation_router)
+    app.include_router(knowledge_router)
+    app.include_router(workflow_router)
     app.include_router(mcp_router)
     return app
 

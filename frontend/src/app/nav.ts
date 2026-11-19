@@ -18,7 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
     description: "配置提示词、模型与知识库 / 工具绑定。",
   },
   {
-    path: "/knowledge",
+    path: "/knowledge-bases",
     label: "知识库",
     description: "上传文档、分块检索，支撑 RAG。",
   },

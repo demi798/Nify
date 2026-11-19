@@ -15,6 +15,12 @@ export type AgentCursorPage<T> = {
   next_cursor: string | null;
 };
 
+/** 绑定知识库简述 */
+export type AgentKnowledgeBaseBrief = {
+  id: string;
+  name: string;
+};
+
 /** 列表项 */
 export type AgentListItem = {
   id: string;
@@ -26,6 +32,8 @@ export type AgentListItem = {
   model_name: string;
   temperature: number;
   tool_count: number;
+  knowledge_base_ids: string[];
+  knowledge_bases: AgentKnowledgeBaseBrief[];
   is_enabled: boolean;
   created_by: string;
   created_at: string;
@@ -47,6 +55,7 @@ export type AgentDetail = {
   max_context_turns: number;
   tool_ids: string[];
   knowledge_base_ids: string[];
+  knowledge_bases: AgentKnowledgeBaseBrief[];
   is_enabled: boolean;
   created_by: string;
   created_at: string;
@@ -64,6 +73,7 @@ export type AgentCreateBody = {
   max_tokens?: number;
   max_context_turns?: number;
   tool_ids?: string[];
+  knowledge_base_ids?: string[];
   is_enabled?: boolean;
 };
 
@@ -76,6 +86,7 @@ export type AgentUpdateBody = {
   max_tokens?: number;
   max_context_turns?: number;
   tool_ids?: string[];
+  knowledge_base_ids?: string[];
   is_enabled?: boolean;
 };
 

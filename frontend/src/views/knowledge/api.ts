@@ -1,9 +1,28 @@
-/** knowledge 模块 API；须经 shared/api-client，禁止直接 fetch。 */
-import { getJson } from "@/shared/api-client";
+/** knowledge 模块 API 出口（经 shared/api-client）。 */
+export {
+  KnowledgeApiPrefix,
+  getKnowledgeBaseList,
+  getKnowledgeBase,
+  createKnowledgeBase,
+  updateKnowledgeBase,
+  deleteKnowledgeBase,
+  getKnowledgeBaseReferences,
+  getKnowledgeBaseOptions,
+  getDocumentList,
+  getDocument,
+  getDocumentChunks,
+  uploadDocument,
+  deleteDocument,
+  retryDocument,
+} from "@/api/knowledge";
 
-export const KnowledgeApiPrefix = "/api/v1/knowledge";
-
-/** 占位连通性检查（调用全局 health）。业务接口后续替换。 */
-export async function pingKnowledgeModule(): Promise<{ status: string }> {
-  return getJson("/v1/health");
-}
+export type {
+  KnowledgeBase,
+  KnowledgeBaseCreateBody,
+  KnowledgeBaseUpdateBody,
+  KnowledgeBaseReferences,
+  KnowledgeBaseRefItem,
+  KnowledgeDocument,
+  KnowledgeChunk,
+  KnowledgeCursorPage,
+} from "@/api/knowledge";

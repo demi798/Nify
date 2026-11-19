@@ -21,10 +21,14 @@ from app.core.exceptions import AppError
 from app.modules.model_provider.adapters.base import (
     ChatMessage,
     ChatRequest,
+    ChatResponse,
+    EmbeddingRequest,
+    EmbeddingResponse,
     LLMAdapter,
     StreamDelta,
 )
 from app.modules.model_provider.adapters.fake import FakeLLMAdapter
+from app.modules.model_provider.internal import openai_compat
 from app.modules.model_provider.internal.stream_guard import iter_with_stream_timeouts
 
 logger = logging.getLogger(__name__)
@@ -230,6 +234,227 @@ class LLMGateway:
             workspace_sem.release()
             provider_sem.release()
             global_sem.release()
+
+    async def chat(
+        self,
+        *,
+        provider: str,
+        workspace_id: str,
+        model: str,
+        messages: list[ChatMessage],
+        api_key: str = "fake",
+        base_url: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> ChatResponse:
+        """非流式调用；整段失败可按策略重试（无已推送 delta 限制）。"""
+        provider_key = provider.lower()
+        circuit = self._circuit(provider_key)
+        if circuit.is_open():
+            raise AppError(ErrorCode.LLM_UNAVAILABLE, "模型提供商熔断中，请稍后重试")
+
+        adapter = self._get_adapter(provider_key)
+        request = ChatRequest(
+            model=model,
+            messages=messages,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            extra=extra or {},
+        )
+
+        global_sem = self._global_sem
+        provider_sem = self._provider_sem(provider_key)
+        workspace_sem = self._workspace_sem(workspace_id)
+
+        await global_sem.acquire()
+        await provider_sem.acquire()
+        await workspace_sem.acquire()
+        started = time.perf_counter()
+        attempt = 0
+        try:
+            while True:
+                attempt += 1
+                try:
+                    result = await adapter.chat(request)
+                    circuit.record_success()
+                    latency_ms = int((time.perf_counter() - started) * 1000)
+                    logger.info(
+                        "llm chat ok provider=%s model=%s latency_ms=%s attempt=%s",
+                        provider_key,
+                        model,
+                        latency_ms,
+                        attempt,
+                    )
+                    return result
+                except asyncio.CancelledError:
+                    logger.info(
+                        "llm chat cancelled provider=%s model=%s attempt=%s",
+                        provider_key,
+                        model,
+                        attempt,
+                    )
+                    raise
+                except AppError as exc:
+                    retryable = exc.error_code in _RETRYABLE_CODES
+                    if not retryable or attempt >= settings.llm_max_retries:
+                        circuit.record_failure()
+                        latency_ms = int((time.perf_counter() - started) * 1000)
+                        logger.error(
+                            "llm chat fail provider=%s model=%s latency_ms=%s "
+                            "attempt=%s code=%s",
+                            provider_key,
+                            model,
+                            latency_ms,
+                            attempt,
+                            exc.code,
+                        )
+                        raise
+                    logger.warning(
+                        "llm chat retry provider=%s model=%s attempt=%s code=%s",
+                        provider_key,
+                        model,
+                        attempt,
+                        exc.code,
+                    )
+                    await self._backoff(attempt)
+                except Exception as exc:
+                    if attempt >= settings.llm_max_retries:
+                        circuit.record_failure()
+                        raise AppError(
+                            ErrorCode.LLM_UNAVAILABLE,
+                            "模型调用失败",
+                        ) from exc
+                    logger.warning(
+                        "llm chat retry provider=%s model=%s attempt=%s err=%s",
+                        provider_key,
+                        model,
+                        attempt,
+                        exc,
+                    )
+                    await self._backoff(attempt)
+        finally:
+            workspace_sem.release()
+            provider_sem.release()
+            global_sem.release()
+
+    async def embed(
+        self,
+        *,
+        provider: str,
+        workspace_id: str,
+        model: str,
+        inputs: list[str],
+        api_key: str = "fake",
+        base_url: str | None = None,
+    ) -> EmbeddingResponse:
+        """批量 Embedding；限流/重试/熔断与 chat 一致。返回向量已按 index 对齐。"""
+        provider_key = provider.lower()
+        circuit = self._circuit(provider_key)
+        if circuit.is_open():
+            raise AppError(ErrorCode.LLM_UNAVAILABLE, "模型提供商熔断中，请稍后重试")
+
+        request = EmbeddingRequest(
+            model=model,
+            inputs=list(inputs),
+            api_key=api_key,
+            base_url=base_url,
+        )
+
+        global_sem = self._global_sem
+        provider_sem = self._provider_sem(provider_key)
+        workspace_sem = self._workspace_sem(workspace_id)
+
+        await global_sem.acquire()
+        await provider_sem.acquire()
+        await workspace_sem.acquire()
+        started = time.perf_counter()
+        attempt = 0
+        try:
+            while True:
+                attempt += 1
+                try:
+                    vectors = await self._embed_once(provider_key, request)
+                    circuit.record_success()
+                    latency_ms = int((time.perf_counter() - started) * 1000)
+                    logger.info(
+                        "llm embed ok provider=%s model=%s n=%s latency_ms=%s attempt=%s",
+                        provider_key,
+                        model,
+                        len(vectors),
+                        latency_ms,
+                        attempt,
+                    )
+                    return EmbeddingResponse(vectors=vectors, model=model)
+                except asyncio.CancelledError:
+                    raise
+                except AppError as exc:
+                    retryable = exc.error_code in _RETRYABLE_CODES
+                    if not retryable or attempt >= settings.llm_max_retries:
+                        circuit.record_failure()
+                        raise
+                    logger.warning(
+                        "llm embed retry provider=%s model=%s attempt=%s code=%s",
+                        provider_key,
+                        model,
+                        attempt,
+                        exc.code,
+                    )
+                    await self._backoff(attempt)
+                except Exception as exc:
+                    if attempt >= settings.llm_max_retries:
+                        circuit.record_failure()
+                        raise AppError(
+                            ErrorCode.LLM_UNAVAILABLE,
+                            "Embedding 调用失败",
+                        ) from exc
+                    await self._backoff(attempt)
+        finally:
+            workspace_sem.release()
+            provider_sem.release()
+            global_sem.release()
+
+    async def _embed_once(
+        self, provider_key: str, request: EmbeddingRequest
+    ) -> list[list[float]]:
+        """单次 Embedding；fake 本地生成，其余走 OpenAI 兼容 /embeddings。"""
+        if provider_key == "fake":
+            dim = settings.milvus_embedding_dim
+            return [
+                self._fake_vector(text, dim=dim) for text in request.inputs
+            ]
+
+        if provider_key not in {
+            "openai",
+            "openai_compatible",
+            "gemini",
+            "ollama",
+        }:
+            raise AppError(
+                ErrorCode.LLM_BAD_REQUEST,
+                f"提供商 {provider_key} 暂不支持 Embedding",
+            )
+        if not request.base_url:
+            raise AppError(ErrorCode.BAD_REQUEST, "Embedding 需要 Base URL")
+        headers = openai_compat.auth_headers_for_bearer(request.api_key)
+        return await openai_compat.create_embeddings(
+            provider=provider_key,
+            base_url=request.base_url,
+            headers=headers,
+            model=request.model,
+            inputs=request.inputs,
+        )
+
+    @staticmethod
+    def _fake_vector(text: str, *, dim: int) -> list[float]:
+        """确定性伪向量（本地联调）；已做 L2 归一化。"""
+        seed = abs(hash(text)) % (2**31)
+        rng = random.Random(seed)
+        vec = [rng.uniform(-1.0, 1.0) for _ in range(dim)]
+        norm = sum(x * x for x in vec) ** 0.5 or 1.0
+        return [x / norm for x in vec]
 
     @staticmethod
     async def _backoff(attempt: int) -> None:

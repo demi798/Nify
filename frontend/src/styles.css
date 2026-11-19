@@ -542,6 +542,50 @@ a:hover {
   color: var(--nify-text-secondary);
 }
 
+.nify-link {
+  color: var(--nify-text-link, #1677ff);
+  font-weight: 500;
+}
+
+.nify-link:hover {
+  text-decoration: underline;
+}
+
+.nify-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.nify-chunk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+}
+
+.nify-chunk-item {
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.nify-chunk-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.nify-chunk-content {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--nify-text-primary, #1f1f1f);
+}
+
 .nify-caption {
   color: var(--nify-text-tertiary);
   font-size: var(--nify-text-sm);
@@ -561,6 +605,334 @@ a:hover {
   box-shadow: 0 0 0 3px var(--nify-accent-soft);
 }
 
+/* ---------- 对话页 ---------- */
+
+.nify-chat-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--nify-gap, 16px);
+  align-items: stretch;
+  min-height: calc(100vh - 220px);
+}
+
+.nify-chat-sidebar-card,
+.nify-chat-main-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.nify-chat-session-list {
+  margin-top: 8px;
+  flex: 1;
+  overflow: auto;
+}
+
+.nify-chat-session {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 8px 10px !important;
+  transition: background 0.15s ease;
+}
+
+.nify-chat-session:hover,
+.nify-chat-session.is-active {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.nify-chat-panel {
+  display: flex;
+  flex-direction: column;
+  height: min(640px, calc(100vh - 240px));
+  min-height: 420px;
+}
+
+.nify-chat-messages {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 8px 12px 0;
+}
+
+.nify-chat-row {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+  max-width: 100%;
+}
+
+.nify-chat-row.is-user {
+  align-items: flex-end;
+}
+
+.nify-chat-row.is-assistant {
+  align-items: flex-start;
+}
+
+.nify-chat-meta {
+  font-size: 12px;
+  color: var(--nify-text-tertiary, #8c8c8c);
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+
+.nify-chat-bubble {
+  max-width: min(85%, 720px);
+  padding: 10px 14px;
+  border-radius: 12px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.nify-chat-bubble.is-user {
+  background: rgba(22, 119, 255, 0.1);
+  border-bottom-right-radius: 4px;
+}
+
+.nify-chat-bubble.is-assistant {
+  background: rgba(0, 0, 0, 0.04);
+  border-bottom-left-radius: 4px;
+}
+
+.nify-chat-plain {
+  white-space: pre-wrap;
+}
+
+.nify-chat-error {
+  color: #cf1322;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.nify-chat-cancelled-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nify-chat-cancelled {
+  color: var(--nify-text-tertiary, #8c8c8c);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nify-chat-md {
+  position: relative;
+}
+
+.nify-chat-md > *:first-child {
+  margin-top: 0;
+}
+
+.nify-chat-md > *:last-child {
+  margin-bottom: 0;
+}
+
+.nify-chat-md p {
+  margin: 0.4em 0;
+}
+
+.nify-chat-md pre {
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 13px;
+}
+
+.nify-chat-md code {
+  font-family: var(--nify-font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+}
+
+.nify-chat-md :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.nify-chat-md ul,
+.nify-chat-md ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+
+/* 流式打字机光标 */
+.nify-chat-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: nify-chat-blink 1s steps(1) infinite;
+}
+
+@keyframes nify-chat-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 空 AI 气泡三点加载 */
+.nify-chat-loading {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  height: 1.2em;
+  padding: 2px 0;
+}
+
+.nify-chat-loading span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  animation: nify-chat-bounce 1.1s ease-in-out infinite;
+}
+
+.nify-chat-loading span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.nify-chat-loading span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes nify-chat-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.nify-chat-composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.nify-chat-send {
+  min-width: 96px;
+  height: 40px;
+}
+
+.nify-chat-stop {
+  min-width: 96px;
+}
+
+@media (max-width: 900px) {
+  .nify-chat-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .nify-chat-sidebar {
+    max-height: 200px;
+  }
+}
+
+/* ---------- 知识库卡片网格 ---------- */
+
+.nify-kb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--nify-gap);
+}
+
+.nify-kb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  background: var(--nify-bg-surface);
+  border: 1px solid var(--nify-border-subtle);
+  border-radius: var(--nify-radius-lg);
+  box-shadow: var(--nify-shadow-sm);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+  min-height: 168px;
+  text-align: left;
+}
+
+.nify-kb-card:hover {
+  border-color: color-mix(in srgb, var(--nify-primary) 35%, var(--nify-border-subtle));
+  box-shadow: var(--nify-shadow-md, 0 8px 24px rgba(15, 23, 42, 0.08));
+  transform: translateY(-2px);
+}
+
+.nify-kb-card:focus-visible {
+  outline: 2px solid var(--nify-primary-400);
+  outline-offset: 2px;
+}
+
+.nify-kb-card--disabled {
+  opacity: 0.78;
+}
+
+.nify-kb-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.nify-kb-card__title {
+  margin: 0;
+  font-size: var(--nify-text-lg, 16px);
+  font-weight: 600;
+  color: var(--nify-text-primary);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.nify-kb-card__desc {
+  margin: 0;
+  flex: 1;
+  font-size: var(--nify-text-sm);
+  color: var(--nify-text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.8em;
+}
+
+.nify-kb-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: var(--nify-text-tertiary, var(--nify-text-secondary));
+}
+
+.nify-kb-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--nify-border-subtle);
+}
+
+.nify-kb-card__action-btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -568,5 +940,9 @@ a:hover {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .nify-kb-card:hover {
+    transform: none;
   }
 }

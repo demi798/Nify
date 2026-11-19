@@ -57,6 +57,10 @@ class AgentCreate(CreateSchema):
         default_factory=list,
         validation_alias=AliasChoices("tool_ids", "toolIds"),
     )
+    knowledge_base_ids: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("knowledge_base_ids", "knowledgeBaseIds"),
+    )
     is_enabled: bool = Field(
         default=True,
         validation_alias=AliasChoices("is_enabled", "isEnabled"),
@@ -99,6 +103,19 @@ class AgentCreate(CreateSchema):
             out.append(tid)
         return out
 
+    @field_validator("knowledge_base_ids")
+    @classmethod
+    def _knowledge_base_ids(cls, v: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in v or []:
+            kid = (raw or "").strip()
+            if not kid or kid in seen:
+                continue
+            seen.add(kid)
+            out.append(kid)
+        return out
+
 
 class AgentUpdate(UpdateSchema):
     """更新 Agent；未传字段保持原值。"""
@@ -136,6 +153,10 @@ class AgentUpdate(UpdateSchema):
     tool_ids: list[str] | None = Field(
         default=None,
         validation_alias=AliasChoices("tool_ids", "toolIds"),
+    )
+    knowledge_base_ids: list[str] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("knowledge_base_ids", "knowledgeBaseIds"),
     )
     is_enabled: bool | None = Field(
         default=None,
@@ -182,6 +203,28 @@ class AgentUpdate(UpdateSchema):
             out.append(tid)
         return out
 
+    @field_validator("knowledge_base_ids")
+    @classmethod
+    def _knowledge_base_ids(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in v:
+            kid = (raw or "").strip()
+            if not kid or kid in seen:
+                continue
+            seen.add(kid)
+            out.append(kid)
+        return out
+
+
+class AgentKnowledgeBaseBriefOut(SchemaBase):
+    """Agent 绑定的知识库简述（列表 / 详情展示）。"""
+
+    id: str
+    name: str
+
 
 class AgentListItemOut(SchemaBase):
     """Agent 列表项（不含超长 system_prompt）。"""
@@ -195,6 +238,8 @@ class AgentListItemOut(SchemaBase):
     model_name: str
     temperature: float
     tool_count: int = 0
+    knowledge_base_ids: list[str] = Field(default_factory=list)
+    knowledge_bases: list[AgentKnowledgeBaseBriefOut] = Field(default_factory=list)
     is_enabled: bool
     created_by: str
     created_at: datetime
@@ -217,6 +262,7 @@ class AgentDetailOut(SchemaBase):
     max_context_turns: int
     tool_ids: list[str] = Field(default_factory=list)
     knowledge_base_ids: list[str] = Field(default_factory=list)
+    knowledge_bases: list[AgentKnowledgeBaseBriefOut] = Field(default_factory=list)
     is_enabled: bool
     created_by: str
     created_at: datetime

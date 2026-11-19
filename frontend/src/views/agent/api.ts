@@ -2,9 +2,14 @@
  * agent 模块 API 出口 + 表单辅助数据（模型 / MCP 工具选项）。
  */
 import { getAgentList, getAgent, createAgent, updateAgent, deleteAgent } from "@/api/agent";
+import { getKnowledgeBaseOptions } from "@/api/knowledge";
 import { getProviderList } from "@/api/provider";
 import { getJson } from "@/shared/api-client";
-import type { ModelSelectGroup, McpToolOption } from "./types";
+import type {
+  KnowledgeBaseOption,
+  ModelSelectGroup,
+  McpToolOption,
+} from "./types";
 
 export {
   getAgentList,
@@ -52,4 +57,10 @@ export async function listMcpToolOptions(): Promise<McpToolOption[]> {
     name: r.name,
     transport: r.transport,
   }));
+}
+
+/** 启用中的知识库选项（绑定 / 取消关联） */
+export async function listKnowledgeBaseOptions(): Promise<KnowledgeBaseOption[]> {
+  const rows = await getKnowledgeBaseOptions();
+  return (rows ?? []).map((r) => ({ id: r.id, name: r.name }));
 }

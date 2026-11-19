@@ -11,7 +11,11 @@ import httpx
 
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppError
-from app.modules.model_provider.adapters.base import ChatRequest, StreamDelta
+from app.modules.model_provider.adapters.base import (
+    ChatRequest,
+    ChatResponse,
+    StreamDelta,
+)
 from app.modules.model_provider.constants import ANTHROPIC_VERSION, DEFAULT_BASE_URLS
 from app.modules.model_provider.internal.http_clients import (
     get_http_client,
@@ -120,6 +124,62 @@ class ClaudeAdapter:
             raise AppError(ErrorCode.LLM_TIMEOUT, "Claude 响应超时") from exc
         except httpx.HTTPError as exc:
             raise AppError(ErrorCode.LLM_UNAVAILABLE, "Claude 连接失败") from exc
+
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        """非流式 Messages API。"""
+        base = (request.base_url or DEFAULT_BASE_URLS["claude"]).rstrip("/")
+        url = f"{base}/v1/messages"
+        system, messages = _split_system(request)
+        if not messages:
+            raise AppError(ErrorCode.LLM_BAD_REQUEST, "Claude 请求缺少对话消息")
+
+        version = str(
+            (request.extra or {}).get("anthropic_version") or ANTHROPIC_VERSION
+        )
+        headers = outbound_headers(
+            extra={
+                "Content-Type": "application/json",
+                "x-api-key": request.api_key,
+                "anthropic-version": version,
+            }
+        )
+        payload: dict[str, Any] = {
+            "model": request.model,
+            "messages": messages,
+            "max_tokens": request.max_tokens or 1024,
+            "stream": False,
+        }
+        if system:
+            payload["system"] = system
+        if request.temperature is not None:
+            payload["temperature"] = request.temperature
+
+        client = get_http_client(self.provider)
+        try:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code >= 400:
+                raise _map_http_error(resp.status_code, resp.text)
+            data = resp.json()
+            parts: list[str] = []
+            for block in data.get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(str(block.get("text") or ""))
+            usage = data.get("usage")
+            usage_dict = usage if isinstance(usage, dict) else None
+            return ChatResponse(
+                content="".join(parts),
+                finish_reason=data.get("stop_reason"),
+                usage=usage_dict,
+                raw=data if isinstance(data, dict) else {},
+            )
+        except AppError:
+            raise
+        except httpx.TimeoutException as exc:
+            raise AppError(ErrorCode.LLM_TIMEOUT, "Claude 响应超时") from exc
+        except httpx.HTTPError as exc:
+            raise AppError(ErrorCode.LLM_UNAVAILABLE, "Claude 连接失败") from exc
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            raise AppError(ErrorCode.EXTERNAL_SERVICE_ERROR, "Claude 响应解析失败") from exc
 
 
 async def probe_claude(

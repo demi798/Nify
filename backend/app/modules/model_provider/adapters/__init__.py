@@ -3,8 +3,10 @@
 from app.modules.model_provider.adapters.base import (
     ChatMessage,
     ChatRequest,
+    ChatResponse,
     LLMAdapter,
     StreamDelta,
+    chat_from_stream,
 )
 from app.modules.model_provider.adapters.claude import ClaudeAdapter
 from app.modules.model_provider.adapters.fake import FakeLLMAdapter
@@ -18,6 +20,7 @@ from app.modules.model_provider.adapters.openai_compatible import (
 __all__ = [
     "ChatMessage",
     "ChatRequest",
+    "ChatResponse",
     "ClaudeAdapter",
     "FakeLLMAdapter",
     "GeminiAdapter",
@@ -26,6 +29,7 @@ __all__ = [
     "OpenAIAdapter",
     "OpenAICompatibleAdapter",
     "StreamDelta",
+    "chat_from_stream",
 ]
 
 

@@ -1,4 +1,4 @@
-"""agent 用例：CRUD（跨模块仅调 ModelProviderService 公开方法）。"""
+"""agent 用例：CRUD（跨模块调 ModelProviderService / KnowledgeService 公开方法）。"""
 
 from __future__ import annotations
 
@@ -27,9 +27,11 @@ from app.modules.agent.models import Agent, AgentToolBinding
 from app.modules.agent.schemas import (
     AgentCreate,
     AgentDetailOut,
+    AgentKnowledgeBaseBriefOut,
     AgentListItemOut,
     AgentUpdate,
 )
+from app.modules.knowledge.service import KnowledgeService
 from app.modules.model_provider.schemas import EnabledModelBinding
 from app.modules.model_provider.service import ModelProviderService
 
@@ -42,9 +44,11 @@ class AgentService:
         session: AsyncSession,
         *,
         model_provider_service: ModelProviderService,
+        knowledge_service: KnowledgeService | None = None,
     ) -> None:
         self._session = session
         self._model_provider = model_provider_service
+        self._knowledge = knowledge_service or KnowledgeService(session)
 
     async def list_agents_page(
         self, *, workspace_id: str, params: CursorParams
@@ -67,7 +71,13 @@ class AgentService:
             limit + 1
         )
         rows = list((await self._session.scalars(stmt)).all())
-        items = [self._to_list_item(a) for a in rows]
+        kb_name_map = await self._resolve_kb_names(
+            workspace_id=workspace_id,
+            agents=rows,
+        )
+        items = [
+            self._to_list_item(a, kb_name_map=kb_name_map) for a in rows
+        ]
         return build_cursor_page(
             items,
             limit,
@@ -81,7 +91,13 @@ class AgentService:
         """详情：含 system_prompt 与 tool_ids。"""
         agent = await self._get_agent_entity(workspace_id, agent_id)
         tool_ids = await self._load_tool_ids(agent.id)
-        return self._to_detail_out(agent, tool_ids=tool_ids)
+        kb_briefs = await self._knowledge_briefs(
+            workspace_id=workspace_id,
+            knowledge_base_ids=[str(x) for x in (agent.knowledge_base_ids or [])],
+        )
+        return self._to_detail_out(
+            agent, tool_ids=tool_ids, knowledge_bases=kb_briefs
+        )
 
     async def create_agent(
         self,
@@ -109,6 +125,10 @@ class AgentService:
         )
 
         tool_ids = self._normalize_tool_ids(body.tool_ids)
+        kb_ids = await self._knowledge.assert_bases_in_workspace(
+            workspace_id=workspace_id,
+            knowledge_base_ids=list(body.knowledge_base_ids or []),
+        )
         config = self._build_config(
             temperature=body.temperature,
             max_tokens=body.max_tokens,
@@ -124,7 +144,7 @@ class AgentService:
             model_provider_id=binding.provider_id,
             model_name=binding.model_key,
             model_config_id=binding.model_id,
-            knowledge_base_ids=[],
+            knowledge_base_ids=list(kb_ids),
             mcp_server_ids=list(tool_ids),
             config=config,
             is_enabled=bool(body.is_enabled),
@@ -142,7 +162,15 @@ class AgentService:
         await self._session.flush()
 
         invalidate_agent_list(workspace_id)
-        return self._to_detail_out(agent, tool_ids=tool_ids, binding=binding)
+        kb_briefs = await self._knowledge_briefs(
+            workspace_id=workspace_id, knowledge_base_ids=kb_ids
+        )
+        return self._to_detail_out(
+            agent,
+            tool_ids=tool_ids,
+            binding=binding,
+            knowledge_bases=kb_briefs,
+        )
 
     async def update_agent(
         self,
@@ -214,9 +242,25 @@ class AgentService:
             )
             agent.mcp_server_ids = list(tool_ids)
 
+        if "knowledge_base_ids" in changes and changes["knowledge_base_ids"] is not None:
+            # 热更新：可随时改绑定列表；空列表即取消全部知识库关联
+            agent.knowledge_base_ids = await self._knowledge.assert_bases_in_workspace(
+                workspace_id=workspace_id,
+                knowledge_base_ids=list(changes["knowledge_base_ids"] or []),
+            )
+
         await self._session.flush()
         invalidate_agent_list(workspace_id)
-        return self._to_detail_out(agent, tool_ids=tool_ids, binding=binding)
+        kb_ids = [str(x) for x in (agent.knowledge_base_ids or [])]
+        kb_briefs = await self._knowledge_briefs(
+            workspace_id=workspace_id, knowledge_base_ids=kb_ids
+        )
+        return self._to_detail_out(
+            agent,
+            tool_ids=tool_ids,
+            binding=binding,
+            knowledge_bases=kb_briefs,
+        )
 
     async def delete_agent(self, *, workspace_id: str, agent_id: str) -> None:
         """软删除 Agent（deleted_at）；绑定行保留供审计，列表不可见。"""
@@ -335,9 +379,48 @@ class AgentService:
         max_context_turns = int(raw.get("max_context_turns", DEFAULT_MAX_CONTEXT_TURNS))
         return temperature, max_tokens, max_context_turns
 
-    def _to_list_item(self, agent: Agent) -> AgentListItemOut:
+    async def _resolve_kb_names(
+        self, *, workspace_id: str, agents: list[Agent]
+    ) -> dict[str, str]:
+        """批量解析本页 Agent 绑定的知识库名称。"""
+        all_ids: list[str] = []
+        for agent in agents:
+            for raw in agent.knowledge_base_ids or []:
+                kid = str(raw).strip()
+                if kid:
+                    all_ids.append(kid)
+        briefs = await self._knowledge.resolve_base_briefs(
+            workspace_id=workspace_id, knowledge_base_ids=all_ids
+        )
+        return {b.id: b.name for b in briefs}
+
+    async def _knowledge_briefs(
+        self, *, workspace_id: str, knowledge_base_ids: list[str]
+    ) -> list[AgentKnowledgeBaseBriefOut]:
+        briefs = await self._knowledge.resolve_base_briefs(
+            workspace_id=workspace_id,
+            knowledge_base_ids=knowledge_base_ids,
+        )
+        return [
+            AgentKnowledgeBaseBriefOut(id=b.id, name=b.name) for b in briefs
+        ]
+
+    def _to_list_item(
+        self,
+        agent: Agent,
+        *,
+        kb_name_map: dict[str, str] | None = None,
+    ) -> AgentListItemOut:
         temperature, _, _ = self._read_config(agent.config)
         tool_count = len(agent.mcp_server_ids or [])
+        kb_ids = [str(x) for x in (agent.knowledge_base_ids or [])]
+        names = kb_name_map or {}
+        knowledge_bases = [
+            AgentKnowledgeBaseBriefOut(
+                id=kid, name=names.get(kid, "未知知识库")
+            )
+            for kid in kb_ids
+        ]
         return AgentListItemOut(
             id=agent.id,
             workspace_id=agent.workspace_id,
@@ -348,6 +431,8 @@ class AgentService:
             model_name=agent.model_name,
             temperature=temperature,
             tool_count=tool_count,
+            knowledge_base_ids=kb_ids,
+            knowledge_bases=knowledge_bases,
             is_enabled=bool(agent.is_enabled),
             created_by=agent.created_by,
             created_at=agent.created_at,
@@ -360,6 +445,7 @@ class AgentService:
         *,
         tool_ids: list[str],
         binding: EnabledModelBinding | None = None,
+        knowledge_bases: list[AgentKnowledgeBaseBriefOut] | None = None,
     ) -> AgentDetailOut:
         temperature, max_tokens, max_context_turns = self._read_config(agent.config)
         kb_ids = [str(x) for x in (agent.knowledge_base_ids or [])]
@@ -377,6 +463,7 @@ class AgentService:
             max_context_turns=max_context_turns,
             tool_ids=list(tool_ids),
             knowledge_base_ids=kb_ids,
+            knowledge_bases=list(knowledge_bases or []),
             is_enabled=bool(agent.is_enabled),
             created_by=agent.created_by,
             created_at=agent.created_at,

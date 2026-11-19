@@ -1,0 +1,17 @@
+"""workflow 依赖组装。"""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.db import get_session
+from app.modules.workflow.service import WorkflowService
+
+
+async def get_workflow_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkflowService:
+    return WorkflowService(session)

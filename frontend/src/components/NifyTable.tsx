@@ -8,7 +8,7 @@ import {
   useImperativeHandle,
   useState,
 } from "react";
-import type { ReactElement, Ref } from "react";
+import type { ReactElement, ReactNode, Ref } from "react";
 import { Empty, Table } from "antd";
 import type { TablePaginationConfig, TableProps } from "antd";
 import { notifyError } from "@/utils/notify";
@@ -43,6 +43,8 @@ export type NifyTableProps<T extends object> = {
   deps?: unknown[];
   size?: TableProps<T>["size"];
   className?: string;
+  /** 空状态文案或节点 */
+  emptyText?: ReactNode;
 };
 
 export type NifyTableRef = {
@@ -71,6 +73,7 @@ function NifyTableInner<T extends object>(
     deps = [],
     size = "middle",
     className,
+    emptyText,
   }: NifyTableProps<T>,
   ref: Ref<NifyTableRef>,
 ) {
@@ -149,7 +152,7 @@ function NifyTableInner<T extends object>(
       pagination={paginationConfig}
       expandable={expandable}
       locale={{
-        emptyText: (
+        emptyText: emptyText ?? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description="暂无数据"

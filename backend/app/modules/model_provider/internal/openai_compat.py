@@ -14,7 +14,12 @@ import httpx
 
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppError
-from app.modules.model_provider.adapters.base import ChatMessage, ChatRequest, StreamDelta
+from app.modules.model_provider.adapters.base import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    StreamDelta,
+)
 from app.modules.model_provider.internal.http_clients import (
     get_http_client,
     outbound_headers,
@@ -45,13 +50,13 @@ def _map_http_error(status_code: int, body: str) -> AppError:
     return AppError(ErrorCode.EXTERNAL_SERVICE_ERROR, f"模型服务错误：{snippet or status_code}")
 
 
-def build_chat_payload(request: ChatRequest) -> dict[str, Any]:
+def build_chat_payload(request: ChatRequest, *, stream: bool = True) -> dict[str, Any]:
     """构造 chat/completions 请求体。"""
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
     payload: dict[str, Any] = {
         "model": request.model,
         "messages": messages,
-        "stream": True,
+        "stream": stream,
     }
     if request.temperature is not None:
         payload["temperature"] = request.temperature
@@ -80,7 +85,7 @@ async def stream_chat_completions(
     """POST /chat/completions 并解析 SSE。"""
     url = f"{_normalize_base(base_url)}/chat/completions"
     client = get_http_client(provider)
-    payload = build_chat_payload(request)
+    payload = build_chat_payload(request, stream=True)
     try:
         async with client.stream(
             "POST",
@@ -123,6 +128,54 @@ async def stream_chat_completions(
         raise AppError(ErrorCode.LLM_UNAVAILABLE, "模型连接失败") from exc
 
 
+async def chat_completions(
+    *,
+    provider: str,
+    request: ChatRequest,
+    base_url: str,
+    headers: dict[str, str],
+) -> ChatResponse:
+    """POST /chat/completions（非流式）并映射为 ChatResponse。"""
+    url = f"{_normalize_base(base_url)}/chat/completions"
+    client = get_http_client(provider)
+    payload = build_chat_payload(request, stream=False)
+    try:
+        resp = await client.post(
+            url,
+            headers=outbound_headers(extra=headers),
+            json=payload,
+        )
+        if resp.status_code >= 400:
+            raise _map_http_error(resp.status_code, resp.text)
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise AppError(ErrorCode.LLM_UNAVAILABLE, "模型返回空 choices")
+        choice0 = choices[0] or {}
+        message = choice0.get("message") or {}
+        content = message.get("content")
+        if content is None:
+            content = ""
+        elif not isinstance(content, str):
+            content = str(content)
+        usage = data.get("usage")
+        usage_dict = usage if isinstance(usage, dict) else None
+        return ChatResponse(
+            content=content,
+            finish_reason=choice0.get("finish_reason"),
+            usage=usage_dict,
+            raw=data if isinstance(data, dict) else {},
+        )
+    except AppError:
+        raise
+    except httpx.TimeoutException as exc:
+        raise AppError(ErrorCode.LLM_TIMEOUT, "模型响应超时") from exc
+    except httpx.HTTPError as exc:
+        raise AppError(ErrorCode.LLM_UNAVAILABLE, "模型连接失败") from exc
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise AppError(ErrorCode.EXTERNAL_SERVICE_ERROR, "模型响应解析失败") from exc
+
+
 async def probe_chat_completions(
     *,
     provider: str,
@@ -157,3 +210,56 @@ async def probe_chat_completions(
 
 def messages_to_openai(messages: list[ChatMessage]) -> list[dict[str, str]]:
     return [{"role": m.role, "content": m.content} for m in messages]
+
+
+async def create_embeddings(
+    *,
+    provider: str,
+    base_url: str,
+    headers: dict[str, str],
+    model: str,
+    inputs: list[str],
+) -> list[list[float]]:
+    """POST /embeddings；按 data[].index 排序后与输入对齐。"""
+    if not inputs:
+        return []
+    url = f"{_normalize_base(base_url)}/embeddings"
+    client = get_http_client(provider)
+    payload = {"model": model, "input": inputs}
+    try:
+        resp = await client.post(
+            url,
+            headers=outbound_headers(extra=headers),
+            json=payload,
+        )
+        if resp.status_code >= 400:
+            raise _map_http_error(resp.status_code, resp.text)
+        body = resp.json()
+        rows = body.get("data")
+        if not isinstance(rows, list) or not rows:
+            raise AppError(ErrorCode.LLM_UNAVAILABLE, "Embedding 返回空 data")
+        # 不能假设返回顺序与输入一致，必须按 index 排序
+        sorted_rows = sorted(
+            rows,
+            key=lambda r: int((r or {}).get("index", 0)),
+        )
+        vectors: list[list[float]] = []
+        for row in sorted_rows:
+            emb = (row or {}).get("embedding")
+            if not isinstance(emb, list) or not emb:
+                raise AppError(ErrorCode.LLM_UNAVAILABLE, "Embedding 向量为空")
+            vectors.append([float(x) for x in emb])
+        if len(vectors) != len(inputs):
+            raise AppError(
+                ErrorCode.LLM_UNAVAILABLE,
+                f"Embedding 条数不匹配：期望 {len(inputs)} 实际 {len(vectors)}",
+            )
+        return vectors
+    except AppError:
+        raise
+    except httpx.TimeoutException as exc:
+        raise AppError(ErrorCode.LLM_TIMEOUT, "Embedding 响应超时") from exc
+    except httpx.HTTPError as exc:
+        raise AppError(ErrorCode.LLM_UNAVAILABLE, "Embedding 连接失败") from exc
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise AppError(ErrorCode.EXTERNAL_SERVICE_ERROR, "Embedding 响应解析失败") from exc

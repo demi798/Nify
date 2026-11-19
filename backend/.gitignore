@@ -8,3 +8,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 data/
+# Milvus Lite 本地库（scripts/milvus_hello.py 生成）
+milvus_hello.db/
+*.db/

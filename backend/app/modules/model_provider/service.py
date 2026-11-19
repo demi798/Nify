@@ -596,6 +596,128 @@ class ModelProviderService:
         put_cached_runtime(provider.id, {**payload, "_rev": rev})
         return payload
 
+    async def get_embedding_runtime(
+        self, *, workspace_id: str
+    ) -> dict[str, Any]:
+        """供 knowledge 管线取 Embedding 参数（复用 Provider 凭证，禁止硬编码 Key）。
+
+        解析顺序：
+        1. ``NIFY_EMBEDDING_PROVIDER_ID``（若配置）
+        2. 工作区内 ``modality=embedding`` 且启用的模型
+        3. 启用中的 openai / openai_compatible / fake + ``NIFY_EMBEDDING_MODEL_KEY``
+        """
+        fixed_pid = (settings.embedding_provider_id or "").strip() or None
+        if fixed_pid:
+            provider = await self._get_provider_entity(workspace_id, fixed_pid)
+            model_key = await self._resolve_embedding_model_key(
+                workspace_id=workspace_id, provider_id=provider.id
+            )
+            creds = await self.get_runtime_credentials(
+                workspace_id=workspace_id, provider_id=provider.id
+            )
+            return {
+                "provider_id": provider.id,
+                "provider_type": str(creds["provider_type"]),
+                "model": model_key,
+                "api_key": str(creds.get("api_key") or ""),
+                "base_url": creds.get("base_url"),
+            }
+
+        # 优先专用 embedding 模型目录
+        stmt = (
+            select(ProviderModel, Provider)
+            .join(Provider, Provider.id == ProviderModel.provider_id)
+            .where(
+                ProviderModel.workspace_id == workspace_id,
+                ProviderModel.modality == "embedding",
+                ProviderModel.is_enabled.is_(True),
+                Provider.is_enabled.is_(True),
+            )
+            .order_by(
+                ProviderModel.is_default.desc(),
+                ProviderModel.created_at.asc(),
+            )
+            .limit(1)
+        )
+        row = (await self._session.execute(stmt)).first()
+        if row is not None:
+            model, provider = row
+            if provider.health_status == HEALTH_STATUS_DOWN:
+                raise AppError(
+                    ErrorCode.LLM_UNAVAILABLE,
+                    "Embedding 提供商健康检查为 DOWN",
+                )
+            creds = await self.get_runtime_credentials(
+                workspace_id=workspace_id, provider_id=provider.id
+            )
+            return {
+                "provider_id": provider.id,
+                "provider_type": str(creds["provider_type"]),
+                "model": model.model_key,
+                "api_key": str(creds.get("api_key") or ""),
+                "base_url": creds.get("base_url"),
+            }
+
+        # 回退：兼容聊天 Provider + 全局 embedding model_key
+        providers = list(
+            (
+                await self._session.scalars(
+                    select(Provider)
+                    .where(
+                        Provider.workspace_id == workspace_id,
+                        Provider.is_enabled.is_(True),
+                        Provider.provider_type.in_(
+                            ("fake", "openai", "openai_compatible")
+                        ),
+                    )
+                    .order_by(Provider.created_at.asc())
+                )
+            ).all()
+        )
+        providers = [
+            p for p in providers if p.health_status != HEALTH_STATUS_DOWN
+        ]
+        reject_if(
+            not providers,
+            code=ErrorCode.BAD_REQUEST,
+            message="无可用 Embedding 提供商，请先配置 openai_compatible / fake Provider",
+        )
+        provider = providers[0]
+        model_key = require_non_blank(
+            settings.embedding_model_key, field="embedding_model_key"
+        )
+        creds = await self.get_runtime_credentials(
+            workspace_id=workspace_id, provider_id=provider.id
+        )
+        return {
+            "provider_id": provider.id,
+            "provider_type": str(creds["provider_type"]),
+            "model": model_key,
+            "api_key": str(creds.get("api_key") or ""),
+            "base_url": creds.get("base_url"),
+        }
+
+    async def _resolve_embedding_model_key(
+        self, *, workspace_id: str, provider_id: str
+    ) -> str:
+        """固定 Provider 下选 embedding 模型 key。"""
+        emb = await self._session.scalar(
+            select(ProviderModel.model_key)
+            .where(
+                ProviderModel.workspace_id == workspace_id,
+                ProviderModel.provider_id == provider_id,
+                ProviderModel.modality == "embedding",
+                ProviderModel.is_enabled.is_(True),
+            )
+            .order_by(ProviderModel.is_default.desc())
+            .limit(1)
+        )
+        if emb:
+            return str(emb)
+        return require_non_blank(
+            settings.embedding_model_key, field="embedding_model_key"
+        )
+
     @staticmethod
     def resolve_base_url(provider: Provider) -> str:
         if provider.base_url and provider.base_url.strip():

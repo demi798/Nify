@@ -1,4 +1,9 @@
-/** conversation 模块类型（与后端 schemas 对齐，后续补充）。 */
-export type ConversationPlaceholder = {
+/** conversation 模块展示类型。 */
+
+export type ChatBubble = {
   id: string;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  status?: string;
+  streaming?: boolean;
 };

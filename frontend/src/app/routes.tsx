@@ -9,7 +9,10 @@ import {
 import { ModelProviderHomePage } from "@/views/model_provider";
 import { AgentHomePage } from "@/views/agent";
 import { ConversationHomePage } from "@/views/conversation";
-import { KnowledgeHomePage } from "@/views/knowledge";
+import {
+  KnowledgeDocumentsPage,
+  KnowledgeHomePage,
+} from "@/views/knowledge";
 import { WorkflowHomePage } from "@/views/workflow";
 import { McpHomePage } from "@/views/mcp";
 import { getAccessToken } from "@/shared/api-client";
@@ -43,7 +46,16 @@ export function AppRoutes() {
         <Route path="model-providers" element={<ModelProviderHomePage />} />
         <Route path="agents" element={<AgentHomePage />} />
         <Route path="conversation" element={<ConversationHomePage />} />
-        <Route path="knowledge" element={<KnowledgeHomePage />} />
+        <Route path="knowledge-bases" element={<KnowledgeHomePage />} />
+        <Route
+          path="knowledge-bases/:kbId/documents"
+          element={<KnowledgeDocumentsPage />}
+        />
+        {/* 兼容旧路径 */}
+        <Route
+          path="knowledge"
+          element={<Navigate to="/knowledge-bases" replace />}
+        />
         <Route path="workflows" element={<WorkflowHomePage />} />
         <Route path="mcp" element={<McpHomePage />} />
       </Route>
