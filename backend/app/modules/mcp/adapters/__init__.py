@@ -1,1 +1,1 @@
-"""mcp 外部 SDK 适配包。"""
+"""mcp 外部适配包（官方 MCP Python SDK Client）。"""

@@ -16,7 +16,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.db import new_uuid
+from app.core.db import commit_before_external_io, new_uuid
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppError
 from app.core.storage import LocalFileStorage, get_file_storage
@@ -32,7 +32,7 @@ from app.modules.knowledge.constants import (
 from app.modules.knowledge.internal.chunking import ChunkDTO, split_chunks
 from app.modules.knowledge.internal.extract import extract_text
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeDocument
-from app.modules.model_provider.internal.gateway import get_llm_gateway
+from app.modules.model_provider.service import get_llm_gateway
 from app.modules.model_provider.service import ModelProviderService
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ class DocumentIngestPipeline:
             doc.status = STATUS_READY
             doc.error_message = None
             await self._session.flush()
-            await self._session.commit()
+            await commit_before_external_io(self._session)
             logger.info(
                 "document ingest ok document_id=%s chunks=%s",
                 doc.id,
@@ -89,7 +89,7 @@ class DocumentIngestPipeline:
         doc.status = STATUS_PROCESSING
         doc.error_message = None
         await self._session.flush()
-        await self._session.commit()
+        await commit_before_external_io(self._session)
 
     async def _mark_failed(
         self, document_id: str, workspace_id: str, exc: BaseException
@@ -109,7 +109,7 @@ class DocumentIngestPipeline:
                 message = str(exc) or exc.__class__.__name__
             doc.status = STATUS_FAILED
             doc.error_message = self._clip_error(message)
-            await self._session.commit()
+            await commit_before_external_io(self._session)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "mark document failed also failed document_id=%s", document_id

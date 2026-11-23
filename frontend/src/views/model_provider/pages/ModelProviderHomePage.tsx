@@ -7,19 +7,19 @@ import {
   NifyFormItem,
   NifyTable,
   confirmDelete,
-} from "@/components";
-import type { NifyFormDialogRef, NifyFormRules, NifyTableRef } from "@/components";
+} from "@/shared/components";
+import type { NifyFormDialogRef, NifyFormRules, NifyTableRef } from "@/shared/components";
 import {
   createProvider,
   deleteProvider,
   getProviderList,
   testConnection,
   updateProvider,
-} from "@/api/provider";
-import { useIsNarrowScreen } from "@/hooks/useMediaQuery";
+} from "../api";
+import { useIsNarrowScreen } from "@/shared/hooks/useMediaQuery";
 import { getAccessToken, getWorkspaceId } from "@/shared/api-client";
 import { PageCard, PageHeader } from "@/shared/components";
-import { notifyError, notifySuccess } from "@/utils/notify";
+import { notifyError, notifySuccess } from "@/shared/notify";
 import type {
   HealthStatus,
   ModelProvider,

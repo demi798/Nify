@@ -11,7 +11,7 @@ import {
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Empty, Table } from "antd";
 import type { TablePaginationConfig, TableProps } from "antd";
-import { notifyError } from "@/utils/notify";
+import { notifyError } from "@/shared/notify";
 
 export type NifyTableQuery = {
   page: number;

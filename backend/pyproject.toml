@@ -37,6 +37,9 @@ dependencies = [
   "anthropic>=0.39.0,<1.0.0",
   "google-genai>=1.0.0,<2.0.0",
 
+  # MCP Client（官方 SDK；modules/mcp/adapters 薄封装）
+  "mcp>=1.12.0,<3.0.0",
+
   # Milvus
   "pymilvus>=2.4.0,<3.0.0",
 
@@ -73,6 +76,8 @@ packages = ["app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# 对齐 fix.md：用例函数命名 should_*_when_*
+python_functions = ["should_*", "test_*"]
 
 [tool.ruff]
 line-length = 100

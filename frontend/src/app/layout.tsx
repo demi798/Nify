@@ -24,7 +24,7 @@ import {
 import type { MenuProps } from "antd";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { findNavItem } from "@/app/nav";
-import { useIsNarrowScreen } from "@/hooks/useMediaQuery";
+import { useIsNarrowScreen } from "@/shared/hooks/useMediaQuery";
 import {
   clearAuthSession,
   getStoredUser,

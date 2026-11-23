@@ -46,7 +46,11 @@ class Agent(IdMixin, WorkspaceMixin, TimestampMixin, SoftDeleteMixin, Base):
 
 
 class AgentToolBinding(IdMixin, WorkspaceMixin, TimestampMixin, Base):
-    """Agent ↔ MCP 工具绑定（跨模块仅存 UUID，无 FK）。"""
+    """Agent ↔ MCP 工具绑定表（对应课程概念表 agent_tool）。
+
+    Nify 约定：主键/外键均为 UUID v7 字符串；tool_id 语义落在 ``mcp_server_id``
+    （一期将整台启用中的 MCP Server 视为可绑定工具）。唯一键 uk_agent_tool。
+    """
 
     __tablename__ = "agent_tool_bindings"
 

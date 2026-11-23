@@ -19,12 +19,12 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadFile } from "antd/es/upload/interface";
-import { NifyTable, confirmDelete } from "@/components";
-import type { NifyTableRef } from "@/components";
-import { useIsNarrowScreen } from "@/hooks/useMediaQuery";
+import { NifyTable, confirmDelete } from "@/shared/components";
+import type { NifyTableRef } from "@/shared/components";
+import { useIsNarrowScreen } from "@/shared/hooks/useMediaQuery";
 import { getAccessToken, getWorkspaceId } from "@/shared/api-client";
 import { PageCard, PageHeader } from "@/shared/components";
-import { notifyError, notifySuccess } from "@/utils/notify";
+import { notifyError, notifySuccess } from "@/shared/notify";
 import {
   deleteDocument,
   getDocument,

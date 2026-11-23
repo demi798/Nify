@@ -21,6 +21,7 @@ from app.modules.agent.constants import (
     DEFAULT_MAX_CONTEXT_TURNS,
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
+    MAX_TOOL_BINDINGS,
 )
 from app.modules.agent.internal.list_cache import invalidate_agent_list
 from app.modules.agent.models import Agent, AgentToolBinding
@@ -29,10 +30,12 @@ from app.modules.agent.schemas import (
     AgentDetailOut,
     AgentKnowledgeBaseBriefOut,
     AgentListItemOut,
+    AgentToolsReplace,
     AgentUpdate,
 )
 from app.modules.knowledge.service import KnowledgeService
-from app.modules.model_provider.schemas import EnabledModelBinding
+from app.modules.mcp.service import McpService
+from app.modules.model_provider.service import EnabledModelBinding
 from app.modules.model_provider.service import ModelProviderService
 
 
@@ -45,10 +48,12 @@ class AgentService:
         *,
         model_provider_service: ModelProviderService,
         knowledge_service: KnowledgeService | None = None,
+        mcp_service: McpService | None = None,
     ) -> None:
         self._session = session
         self._model_provider = model_provider_service
         self._knowledge = knowledge_service or KnowledgeService(session)
+        self._mcp = mcp_service or McpService(session)
 
     async def list_agents_page(
         self, *, workspace_id: str, params: CursorParams
@@ -124,7 +129,9 @@ class AgentService:
             model_id=body.model_config_id,
         )
 
-        tool_ids = self._normalize_tool_ids(body.tool_ids)
+        tool_ids = await self._prepare_tool_ids(
+            workspace_id=workspace_id, tool_ids=list(body.tool_ids or [])
+        )
         kb_ids = await self._knowledge.assert_bases_in_workspace(
             workspace_id=workspace_id,
             knowledge_base_ids=list(body.knowledge_base_ids or []),
@@ -234,7 +241,10 @@ class AgentService:
 
         tool_ids = await self._load_tool_ids(agent.id)
         if "tool_ids" in changes and changes["tool_ids"] is not None:
-            tool_ids = self._normalize_tool_ids(list(changes["tool_ids"]))
+            tool_ids = await self._prepare_tool_ids(
+                workspace_id=workspace_id,
+                tool_ids=list(changes["tool_ids"] or []),
+            )
             await self._replace_tool_bindings(
                 workspace_id=workspace_id,
                 agent_id=agent.id,
@@ -297,8 +307,30 @@ class AgentService:
         exists = await self._session.scalar(stmt)
         reject_if(exists is not None, code=ErrorCode.CONFLICT, message="Agent 名称已存在")
 
+    async def replace_agent_tools(
+        self,
+        *,
+        workspace_id: str,
+        agent_id: str,
+        body: AgentToolsReplace,
+    ) -> AgentDetailOut:
+        """全量替换工具绑定（写入 agent_tool_bindings；toolId = mcp_server_id）。"""
+        agent = await self._get_agent_entity(workspace_id, agent_id)
+        tool_ids = await self._prepare_tool_ids(
+            workspace_id=workspace_id, tool_ids=list(body.tool_ids or [])
+        )
+        await self._replace_tool_bindings(
+            workspace_id=workspace_id,
+            agent_id=agent.id,
+            tool_ids=tool_ids,
+        )
+        agent.mcp_server_ids = list(tool_ids)
+        await self._session.flush()
+        invalidate_agent_list(workspace_id)
+        return await self.get_agent(workspace_id=workspace_id, agent_id=agent.id)
+
     def _normalize_tool_ids(self, tool_ids: list[str]) -> list[str]:
-        """校验 UUID 格式并去重；mcp 模块未就绪时仅弱校验格式。"""
+        """校验 UUID 格式并去重。"""
         out: list[str] = []
         seen: set[str] = set()
         for raw in tool_ids or []:
@@ -308,6 +340,20 @@ class AgentService:
             seen.add(tid)
             out.append(tid)
         return out
+
+    async def _prepare_tool_ids(
+        self, *, workspace_id: str, tool_ids: list[str]
+    ) -> list[str]:
+        """规范化 + 上限 + 跨模块校验 MCP 存在且启用。"""
+        normalized = self._normalize_tool_ids(tool_ids)
+        reject_if(
+            len(normalized) > MAX_TOOL_BINDINGS,
+            code=ErrorCode.BAD_REQUEST,
+            message=f"一个 Agent 最多绑定 {MAX_TOOL_BINDINGS} 个工具",
+        )
+        return await self._mcp.assert_servers_enabled_for_binding(
+            workspace_id=workspace_id, server_ids=normalized
+        )
 
     async def _load_tool_ids(self, agent_id: str) -> list[str]:
         rows = list(

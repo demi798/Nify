@@ -3,7 +3,7 @@
  */
 import { Modal } from "antd";
 import { ExclamationCircleFilled } from "@ant-design/icons";
-import { notifyError, notifySuccess } from "@/utils/notify";
+import { notifyError, notifySuccess } from "@/shared/notify";
 
 export type ConfirmDeleteOptions<T = void> = {
   /** 确认框标题 */

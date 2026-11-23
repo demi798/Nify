@@ -14,6 +14,8 @@ from app.modules.workflow.schemas import (
     WorkflowCreate,
     WorkflowDetailOut,
     WorkflowListItemOut,
+    WorkflowRunCreate,
+    WorkflowRunOut,
     WorkflowUpdate,
 )
 from app.modules.workflow.service import WorkflowService
@@ -53,6 +55,63 @@ async def create_workflow(
         await svc.create_workflow(
             workspace_id=ws.workspace_id,
             user_id=ws.user_id,
+            body=body,
+        )
+    )
+
+
+@router.get(
+    "/runs/{id}",
+    response_model=ApiResult[WorkflowRunOut],
+)
+async def get_workflow_run(
+    run_id: Annotated[str, Depends(get_path_uuid)],
+    ws: Annotated[CurrentWorkspace, Depends(get_current_workspace)],
+    svc: Annotated[WorkflowService, Depends(get_workflow_service)],
+) -> ApiResult[WorkflowRunOut]:
+    """按 run id 查运行详情（置于 /{id} 之前，避免与工作流详情冲突）。"""
+    return ApiResult.ok(
+        await svc.get_run(workspace_id=ws.workspace_id, run_id=run_id)
+    )
+
+
+@router.get(
+    "/{id}/runs",
+    response_model=ApiResult[CursorPage[WorkflowRunOut]],
+)
+async def list_workflow_runs(
+    workflow_id: Annotated[str, Depends(get_path_uuid)],
+    ws: Annotated[CurrentWorkspace, Depends(get_current_workspace)],
+    svc: Annotated[WorkflowService, Depends(get_workflow_service)],
+    params: Annotated[CursorParams, Depends(get_cursor_params)],
+) -> ApiResult[CursorPage[WorkflowRunOut]]:
+    """某工作流的运行列表（游标分页）。"""
+    return ApiResult.ok(
+        await svc.list_runs_page(
+            workspace_id=ws.workspace_id,
+            workflow_id=workflow_id,
+            params=params,
+        )
+    )
+
+
+@router.post(
+    "/{id}/run",
+    response_model=ApiResult[WorkflowRunOut],
+    status_code=status.HTTP_201_CREATED,
+)
+async def run_workflow(
+    body: WorkflowRunCreate,
+    workflow_id: Annotated[str, Depends(get_path_uuid)],
+    ws: Annotated[CurrentWorkspace, Depends(get_current_workspace)],
+    svc: Annotated[WorkflowService, Depends(get_workflow_service)],
+) -> ApiResult[WorkflowRunOut]:
+    """触发一次工作流执行（进程内 async DAG）。"""
+    return ApiResult.ok(
+        await svc.run_workflow(
+            workspace_id=ws.workspace_id,
+            user_id=ws.user_id,
+            workflow_id=workflow_id,
             body=body,
         )
     )

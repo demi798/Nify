@@ -1,10 +1,11 @@
-"""workflow 表模型（工作流 + 节点 + 边）。"""
+"""workflow 表模型（工作流 + 节点 + 边 + 运行记录）。"""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, Computed, Float, String
+from sqlalchemy import Boolean, Computed, DateTime, Float, String
 from sqlalchemy.dialects.mysql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -80,3 +81,25 @@ class WorkflowEdge(IdMixin, WorkspaceMixin, TimestampMixin, SoftDeleteMixin, Bas
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         assert_soft_delete_allowed(cls.__tablename__)
+
+
+class WorkflowRun(IdMixin, WorkspaceMixin, TimestampMixin, Base):
+    """工作流运行记录（中表）；禁止软删。
+
+    conversation 日后可调用 WorkflowService.run_workflow 触发执行。
+    """
+
+    __tablename__ = "workflow_runs"
+
+    workflow_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    input: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    output: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)

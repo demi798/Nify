@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PlusOutlined, SendOutlined, StopOutlined } from "@ant-design/icons";
+import {
+  DeleteOutlined,
+  PlusOutlined,
+  SendOutlined,
+  StopOutlined,
+} from "@ant-design/icons";
 import {
   Button,
   Empty,
@@ -11,18 +16,19 @@ import {
 } from "antd";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { getAgentList } from "@/api/agent";
-import type { AgentListItem } from "@/api/agent";
+import { confirmDelete } from "@/shared/components";
 import { getAccessToken, getWorkspaceId } from "@/shared/api-client";
 import { PageCard, PageHeader } from "@/shared/components";
-import { notifyError, notifySuccess } from "@/utils/notify";
+import { notifyError, notifySuccess } from "@/shared/notify";
 import {
   createConversation,
+  deleteConversation,
+  getAgentList,
   getConversationList,
   getMessageList,
   streamChat,
 } from "../api";
-import type { Conversation } from "../api";
+import type { AgentListItem, Conversation } from "../api";
 import type { ChatBubble } from "../types";
 
 function formatFailMessage(code?: string, message?: string): string {
@@ -216,6 +222,34 @@ export function ConversationHomePage() {
       notifyError(err instanceof Error ? err.message : "创建会话失败");
     }
   }, [agentId, loadConversations]);
+
+  /** 删除单个会话：若正在流式则先中断；删当前会话则清空右侧 */
+  const handleDeleteConversation = useCallback(
+    async (item: Conversation) => {
+      try {
+        await confirmDelete({
+          content: `确认删除会话「${item.title || "未命名"}」？消息将一并删除且不可恢复。`,
+          api: async () => {
+            if (activeId === item.id) {
+              abortRef.current?.abort();
+              abortRef.current = null;
+              setSending(false);
+            }
+            await deleteConversation(item.id);
+          },
+          successText: "会话已删除",
+        });
+        setConversations((prev) => prev.filter((c) => c.id !== item.id));
+        if (activeId === item.id) {
+          setActiveId(undefined);
+          setBubbles([]);
+        }
+      } catch {
+        // 取消或失败已提示
+      }
+    },
+    [activeId],
+  );
 
   /** 用户手动终止：abort fetch → 服务端 CancelledError → 落库 cancelled */
   const handleStop = useCallback(() => {
@@ -429,9 +463,24 @@ export function ConversationHomePage() {
                       : "nify-chat-session"
                   }
                   onClick={() => setActiveId(item.id)}
+                  actions={[
+                    <Button
+                      key="delete"
+                      type="text"
+                      size="small"
+                      danger
+                      className="nify-chat-session-delete"
+                      icon={<DeleteOutlined />}
+                      aria-label={`删除会话 ${item.title || ""}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDeleteConversation(item);
+                      }}
+                    />,
+                  ]}
                 >
-                  <Typography.Text ellipsis style={{ maxWidth: 200 }}>
-                    {item.title}
+                  <Typography.Text ellipsis style={{ maxWidth: 160 }}>
+                    {item.title || "未命名会话"}
                   </Typography.Text>
                 </List.Item>
               )}

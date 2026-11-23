@@ -14,7 +14,7 @@ from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.db import new_uuid, soft_delete
+from app.core.db import commit_before_external_io, new_uuid, soft_delete
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppError
 from app.core.pagination import (
@@ -50,7 +50,9 @@ from app.modules.knowledge.schemas import (
     KnowledgeBaseUpdate,
     KnowledgeChunkOut,
     KnowledgeDocumentOut,
+    KnowledgeRetrieveHitOut,
 )
+from app.modules.model_provider.service import get_llm_gateway
 from app.modules.model_provider.service import ModelProviderService
 
 logger = logging.getLogger(__name__)
@@ -410,7 +412,7 @@ class KnowledgeService:
         self._session.add(doc)
         await self._session.flush()
         # 入队前先提交，避免 worker 抢跑读不到文档
-        await self._session.commit()
+        await commit_before_external_io(self._session)
         await self._enqueue_parse(doc)
         return self._to_document_out(doc, chunk_count=0)
 
@@ -428,7 +430,7 @@ class KnowledgeService:
         doc.status = STATUS_PENDING
         doc.error_message = None
         await self._session.flush()
-        await self._session.commit()
+        await commit_before_external_io(self._session)
         await self._enqueue_parse(doc)
         return self._to_document_out(doc, chunk_count=0)
 
@@ -446,7 +448,7 @@ class KnowledgeService:
             doc.status = STATUS_DELETE_FAILED
             doc.error_message = self._clip_error(str(exc) or "删除向量失败")
             # 先落库失败态，再抛错（避免外层 rollback 冲掉标记）
-            await self._session.commit()
+            await commit_before_external_io(self._session)
             raise AppError(
                 ErrorCode.SERVICE_UNAVAILABLE,
                 "文档向量清理失败，已标记 delete_failed",
@@ -504,6 +506,121 @@ class KnowledgeService:
         return CursorPage(items=items, next_cursor=next_cursor)
 
     # ---------- 跨模块辅助 ----------
+
+    async def retrieve(
+        self,
+        *,
+        workspace_id: str,
+        query: str,
+        knowledge_base_ids: list[str],
+        top_k: int = 5,
+    ) -> list[KnowledgeRetrieveHitOut]:
+        """向量检索公开方法（供 workflow knowledge 节点等调用）。
+
+        流程：校验库属主/启用 → Embedding → Milvus search → 回表 MySQL chunks。
+
+        Milvus 关闭（NIFY_MILVUS_ENABLED=false）时：返回空列表（不抛错），
+        行为稳定，便于无向量环境下工作流仍能走到 llm。
+        """
+        q = (query or "").strip()
+        if not q:
+            raise AppError(ErrorCode.BAD_REQUEST, "检索 query 不能为空")
+        top_k = max(1, min(int(top_k), 20))
+        kb_ids = await self.assert_bases_in_workspace(
+            workspace_id=workspace_id, knowledge_base_ids=knowledge_base_ids
+        )
+        if not kb_ids:
+            return []
+
+        if not settings.milvus_enabled:
+            logger.info(
+                "retrieve skipped: milvus disabled workspace_id=%s",
+                workspace_id,
+            )
+            return []
+
+        runtime = await self._providers.get_embedding_runtime(
+            workspace_id=workspace_id
+        )
+        gateway = get_llm_gateway()
+        base_url = runtime.get("base_url")
+        if isinstance(base_url, str):
+            base_url = base_url or None
+        else:
+            base_url = None
+        embed_result = await gateway.embed(
+            provider=str(runtime["provider_type"]),
+            workspace_id=workspace_id,
+            model=str(runtime["model"]),
+            inputs=[q],
+            api_key=str(runtime.get("api_key") or ""),
+            base_url=base_url,
+        )
+        if not embed_result.vectors:
+            raise AppError(ErrorCode.LLM_UNAVAILABLE, "Embedding 返回为空")
+        vector = embed_result.vectors[0]
+
+        store = get_milvus_store()
+        await store.connect()
+        # 多库：分别检索再按 score 合并截断
+        merged: list[tuple[str, float, str, str]] = []
+        # (milvus_pk, score, knowledge_base_id, document_id)
+        per_k = max(1, top_k)
+        for kid in kb_ids:
+            hits = await store.search(
+                workspace_id=workspace_id,
+                embedding=vector,
+                knowledge_base_id=kid,
+                top_k=per_k,
+            )
+            for h in hits:
+                merged.append(
+                    (h.milvus_pk, float(h.score), h.knowledge_base_id, h.document_id)
+                )
+        # COSINE distance：越小越相似（与 milvus adapter 一致用 distance）
+        merged.sort(key=lambda x: x[1])
+        # 去重 milvus_pk
+        seen_pk: set[str] = set()
+        selected: list[tuple[str, float, str, str]] = []
+        for item in merged:
+            if item[0] in seen_pk:
+                continue
+            seen_pk.add(item[0])
+            selected.append(item)
+            if len(selected) >= top_k:
+                break
+
+        if not selected:
+            return []
+
+        pks = [x[0] for x in selected]
+        chunk_rows = list(
+            (
+                await self._session.scalars(
+                    select(KnowledgeChunk).where(
+                        KnowledgeChunk.workspace_id == workspace_id,
+                        KnowledgeChunk.milvus_pk.in_(pks),
+                    )
+                )
+            ).all()
+        )
+        by_pk = {r.milvus_pk: r for r in chunk_rows}
+        out: list[KnowledgeRetrieveHitOut] = []
+        for milvus_pk, score, kid, doc_id in selected:
+            row = by_pk.get(milvus_pk)
+            if row is None:
+                continue
+            out.append(
+                KnowledgeRetrieveHitOut(
+                    chunk_id=row.id,
+                    milvus_pk=milvus_pk,
+                    content=row.content or "",
+                    score=score,
+                    knowledge_base_id=kid or row.knowledge_base_id,
+                    document_id=doc_id or row.document_id,
+                )
+            )
+        return out
 
     async def assert_bases_in_workspace(
         self, *, workspace_id: str, knowledge_base_ids: list[str]

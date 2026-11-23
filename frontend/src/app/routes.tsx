@@ -13,8 +13,8 @@ import {
   KnowledgeDocumentsPage,
   KnowledgeHomePage,
 } from "@/views/knowledge";
-import { WorkflowHomePage } from "@/views/workflow";
-import { McpHomePage } from "@/views/mcp";
+import { WorkflowCreatePage, WorkflowHomePage } from "@/views/workflow";
+import { McpDetailPage, McpHomePage } from "@/views/mcp";
 import { getAccessToken } from "@/shared/api-client";
 
 /** 根路径：已登录进系统，未登录进登录页 */
@@ -57,7 +57,10 @@ export function AppRoutes() {
           element={<Navigate to="/knowledge-bases" replace />}
         />
         <Route path="workflows" element={<WorkflowHomePage />} />
+        <Route path="workflows/create" element={<WorkflowCreatePage />} />
         <Route path="mcp" element={<McpHomePage />} />
+        <Route path="mcp/:serverId" element={<McpDetailPage />} />
+
       </Route>
 
       <Route path="*" element={<RootRedirect />} />

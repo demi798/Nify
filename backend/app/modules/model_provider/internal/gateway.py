@@ -127,6 +127,7 @@ class LLMGateway:
         base_url: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> AsyncIterator[StreamDelta]:
         """流式调用；已推送 delta 后禁止整段自动重试。"""
@@ -143,6 +144,7 @@ class LLMGateway:
             base_url=base_url,
             temperature=temperature,
             max_tokens=max_tokens,
+            tools=tools,
             extra=extra or {},
         )
 
@@ -246,6 +248,7 @@ class LLMGateway:
         base_url: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> ChatResponse:
         """非流式调用；整段失败可按策略重试（无已推送 delta 限制）。"""
@@ -262,6 +265,7 @@ class LLMGateway:
             base_url=base_url,
             temperature=temperature,
             max_tokens=max_tokens,
+            tools=tools,
             extra=extra or {},
         )
 

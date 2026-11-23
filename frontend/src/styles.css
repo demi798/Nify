@@ -640,6 +640,19 @@ a:hover {
   background: rgba(0, 0, 0, 0.04);
 }
 
+.nify-chat-session .ant-list-item-action {
+  margin-inline-start: 8px;
+}
+
+.nify-chat-session-delete {
+  opacity: 0.45;
+}
+
+.nify-chat-session:hover .nify-chat-session-delete,
+.nify-chat-session.is-active .nify-chat-session-delete {
+  opacity: 1;
+}
+
 .nify-chat-panel {
   display: flex;
   flex-direction: column;

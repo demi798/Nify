@@ -214,3 +214,45 @@ class WorkflowDetailOut(SchemaBase):
     created_by: str
     created_at: datetime
     updated_at: datetime
+
+
+class WorkflowRunCreate(CreateSchema):
+    """触发一次工作流运行。"""
+
+    query: str = Field(min_length=1, max_length=20_000)
+    conversation_id: str | None = Field(default=None, max_length=36)
+    # 额外输入（透传进 VariablePool.sys.extra）
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("query")
+    @classmethod
+    def _query(cls, v: str) -> str:
+        text = v.strip()
+        if not text:
+            raise ValueError("query 不能为空")
+        return text
+
+    @field_validator("conversation_id")
+    @classmethod
+    def _conversation_id(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        text = v.strip()
+        return text or None
+
+
+class WorkflowRunOut(SchemaBase):
+    """运行记录出参。"""
+
+    id: str
+    workspace_id: str
+    workflow_id: str
+    status: str
+    input: dict[str, Any] | None = None
+    output: dict[str, Any] | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime

@@ -1,6 +1,6 @@
 /** model_provider 模块展示类型。 */
 
-import type { Provider, ProviderModel } from "@/api/provider";
+import type { Provider, ProviderModel } from "./api";
 
 export type ModelProviderType =
   | "openai"

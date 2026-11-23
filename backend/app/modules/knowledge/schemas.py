@@ -135,3 +135,14 @@ class KnowledgeChunkOut(SchemaBase):
     token_count: int
     created_at: datetime
     updated_at: datetime
+
+
+class KnowledgeRetrieveHitOut(SchemaBase):
+    """检索命中简要出参（供 workflow knowledge 节点等跨模块调用）。"""
+
+    chunk_id: str
+    milvus_pk: str
+    content: str
+    score: float
+    knowledge_base_id: str
+    document_id: str

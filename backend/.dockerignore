@@ -1,0 +1,31 @@
+# 虚拟环境与缓存
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 本地密钥与运行产物（运行时用环境变量 / 卷挂载）
+.env
+.env.*
+!.env.example
+log/
+data/
+*.log
+
+# 测试与开发杂项（减小 build context）
+tests/
+scripts/
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# IDE / Git
+.git/
+.gitignore
+.idea/
+.vscode/
+*.md

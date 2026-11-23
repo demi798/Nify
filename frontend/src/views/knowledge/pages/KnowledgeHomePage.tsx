@@ -14,11 +14,11 @@ import {
   NifyFormDialog,
   NifyFormItem,
   confirmDelete,
-} from "@/components";
-import type { NifyFormDialogRef, NifyFormRules } from "@/components";
+} from "@/shared/components";
+import type { NifyFormDialogRef, NifyFormRules } from "@/shared/components";
 import { getAccessToken, getWorkspaceId } from "@/shared/api-client";
 import { PageCard, PageHeader } from "@/shared/components";
-import { notifyError, notifySuccess } from "@/utils/notify";
+import { notifyError, notifySuccess } from "@/shared/notify";
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,

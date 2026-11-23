@@ -270,3 +270,25 @@ class AgentDetailOut(SchemaBase):
     # 可选展示：来自跨模块绑定校验时的快照（创建后回填）
     provider_name: str | None = None
     model_display_name: str | None = None
+
+
+class AgentToolsReplace(CreateSchema):
+    """全量替换 Agent 工具绑定（toolId = mcp_server_id）。"""
+
+    tool_ids: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("tool_ids", "toolIds"),
+    )
+
+    @field_validator("tool_ids")
+    @classmethod
+    def _tool_ids(cls, v: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in v or []:
+            tid = (raw or "").strip()
+            if not tid or tid in seen:
+                continue
+            seen.add(tid)
+            out.append(tid)
+        return out

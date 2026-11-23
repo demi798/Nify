@@ -11,6 +11,8 @@ from app.core.db import get_session
 from app.modules.agent.service import AgentService
 from app.modules.knowledge.deps import get_knowledge_service
 from app.modules.knowledge.service import KnowledgeService
+from app.modules.mcp.deps import get_mcp_service
+from app.modules.mcp.service import McpService
 from app.modules.model_provider.deps import get_model_provider_service
 from app.modules.model_provider.service import ModelProviderService
 
@@ -23,9 +25,11 @@ async def get_agent_service(
     knowledge_service: Annotated[
         KnowledgeService, Depends(get_knowledge_service)
     ],
+    mcp_service: Annotated[McpService, Depends(get_mcp_service)],
 ) -> AgentService:
     return AgentService(
         session,
         model_provider_service=model_provider_service,
         knowledge_service=knowledge_service,
+        mcp_service=mcp_service,
     )

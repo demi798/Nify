@@ -14,6 +14,7 @@ from app.modules.agent.schemas import (
     AgentCreate,
     AgentDetailOut,
     AgentListItemOut,
+    AgentToolsReplace,
     AgentUpdate,
 )
 from app.modules.agent.service import AgentService
@@ -80,6 +81,23 @@ async def update_agent(
     """更新 Agent（PUT；部分字段）。"""
     return ApiResult.ok(
         await svc.update_agent(
+            workspace_id=ws.workspace_id,
+            agent_id=agent_id,
+            body=body,
+        )
+    )
+
+
+@router.put("/{id}/tools", response_model=ApiResult[AgentDetailOut])
+async def replace_agent_tools(
+    body: AgentToolsReplace,
+    agent_id: Annotated[str, Depends(get_path_uuid)],
+    ws: Annotated[CurrentWorkspace, Depends(get_current_workspace)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> ApiResult[AgentDetailOut]:
+    """全量替换工具绑定（toolIds = mcp_server_id 数组；最多 10 个）。"""
+    return ApiResult.ok(
+        await svc.replace_agent_tools(
             workspace_id=ws.workspace_id,
             agent_id=agent_id,
             body=body,

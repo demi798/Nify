@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Button, Form, Input, Typography } from "antd";
 import { register } from "../api";
 import { getAccessToken } from "@/shared/api-client";
-import { notifyError, notifySuccess } from "@/utils/notify";
+import { notifyError, notifySuccess } from "@/shared/notify";
 
 type RegisterForm = {
   display_name: string;

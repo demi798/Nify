@@ -4,7 +4,8 @@
 
 目标不是迷你 Dify，而是：可配模型的内部知识问答 Agent + 少量白名单工具 + 简版工作流。
 
-详细编码与架构规范见 [CLAUDE.md](./CLAUDE.md)（唯一规范，改代码前请先读）。
+详细编码与架构规范见 [CLAUDE.md](./CLAUDE.md)（唯一规范，改代码前请先读）。  
+单元 / 集成测试约定见 [fix.md](./fix.md)。
 
 ## 技术栈
 
@@ -13,6 +14,7 @@
 | 后端 | Python 3.11+ / FastAPI / SQLAlchemy(async) / Alembic |
 | 前端 | React 18 / Vite / Ant Design / TypeScript |
 | 数据 | MySQL 8 / Redis / Milvus Standalone（向量） |
+| 测试 | pytest + pytest-asyncio（`should_*_when_*` 命名） |
 | 规模 | 一期约 20–50 人内网 |
 
 ## 目录结构
@@ -20,6 +22,7 @@
 ```text
 nify/
 ├── CLAUDE.md              # 项目规范（唯一）
+├── fix.md                 # 单元 / 集成测试规范与用例清单
 ├── Makefile               # start / stop / build / package …
 ├── start.sh / stop.sh
 ├── backend/
@@ -27,7 +30,9 @@ nify/
 │   │   ├── main.py        # API 入口（只组装，无业务）
 │   │   ├── worker.py      # 异步任务消费入口
 │   │   ├── core/          # 基础设施（鉴权、响应、日志、队列…）
+│   │   ├── shared/        # 跨模块契约（如 llm ChatMessage）
 │   │   └── modules/       # 业务模块（仅允许 7 个）
+│   ├── tests/             # 单测 modules/ + 集成冒烟 integration/
 │   ├── sql/               # 建表 DDL（001_init_schema.sql）
 │   ├── alembic/           # 数据库迁移
 │   ├── docker-compose.yml # 本地 MySQL（宿主机 3307）
@@ -36,13 +41,13 @@ nify/
 └── frontend/
     └── src/
         ├── app/           # 路由与布局
-        ├── api/           # 跨页复用的 HTTP 封装（如 provider / agent）
-        ├── components/    # NifyTable / NifyFormDialog 等
-        ├── shared/        # api-client 等
-        └── views/         # 与后端 modules 同名的 7 个业务视图
+        ├── shared/        # api-client、公共组件、hooks、notify…
+        └── views/         # 与后端 modules 同名；页面 API 在各自 api.ts
 ```
 
 一期业务模块：`identity` · `model_provider` · `agent` · `conversation` · `knowledge` · `workflow` · `mcp`
+
+> 前端约定：业务 HTTP 放在 `views/<module>/api.ts`；跨页组件放 `shared/`，禁止再散落顶层 `src/api` / `src/components`。
 
 ## 当前进度
 
@@ -50,29 +55,29 @@ nify/
 
 | 模块 | 能力 |
 |------|------|
-| **core** | `ApiResult`、鉴权 deps、日志/`request_id`、游标分页、ORM（软删白名单含 `workflow_nodes` / `workflow_edges`）、队列、本地文件存储、SSE 工具、LLMGateway 骨架 |
+| **core** | `ApiResult`、鉴权 deps、**工作区成员校验**（`X-Workspace-Id` + 成员表）、日志/`request_id`、游标分页、ORM（软删白名单）、队列、本地文件存储、SSE、`commit_before_external_io` |
 | **identity** | 注册 / 登录、工作区 CRUD；启动幂等演示账号 |
-| **model_provider** | Provider / 模型目录 CRUD；API Key Fernet 加密；连通性测试；健康巡检（UP / DEGRADED / DOWN）；Adapters：`openai` / `openai_compatible` / `claude` / `gemini` / `ollama`；运行时凭证短缓存 + 写路径失效；跨模块 `get_enabled_model_binding` / `get_runtime_credentials`（含 embedding） |
-| **agent** | Agent CRUD（软删）；`model_config_id` 跨模块校验；MCP `agent_tool_bindings`；**知识库多选绑定**（`knowledge_base_ids`）；列表返回 `knowledge_bases` 简述；列表缓存失效；前端管理页 |
-| **conversation** | 会话 CRUD；消息游标列表；`POST /{id}/chat` 非流式；`POST /{id}/chat/stream` SSE（meta/delta/error/done）；经 Agent + Gateway；调 LLM 前 commit 用户消息 |
-| **knowledge** | 知识库 CRUD（`is_enabled`、软删）；文档上传 / 列表 / 删除 / 失败重试；分块预览；异步 ingest（解析→分块→embedding→MySQL chunks + Milvus）；**启用中可热更新**（无需先停用/解绑）；删除前校验 Agent/工作流引用（`GET .../references`）；卡片列表前端 |
-| **workflow** | 工作流 CRUD；创建/更新同事务写 `workflow` + 批量 `nodes` + 批量 `edges`；详情三表组装；更新整图替换（软删旧图再插）；删除级联软删节点/边；`NodeConfigParser`（start/end/llm/knowledge/condition/tool） |
-| **mcp** | 一期：启用中的 MCP 服务选项列表（供 Agent 工具多选） |
-| **运维** | `make start` / `make stop`；Docker Compose MySQL；可选 `python -m app.worker` 消费文档解析队列 |
+| **model_provider** | Provider / 模型目录 CRUD；API Key Fernet 加密；连通性测试；健康巡检；Adapters：`openai` / `openai_compatible` / `claude` / `gemini` / `ollama` / `fake`；运行时凭证短缓存；`get_runtime_credentials`（disabled / DOWN 拒绝新请求）；tools 透传 |
+| **agent** | Agent CRUD（软删）；`model_config_id` 跨模块校验；MCP `agent_tool_bindings`；知识库多选绑定；列表缓存失效；前端管理页 |
+| **conversation** | 会话 CRUD（点查带 `workspace_id`）；消息游标列表；非流式 `chat` / SSE `stream`；经 Agent + Gateway；**MCP tool_calls 回合**（首次非流式 → `call_tool` → 二次补全；失败回传 `role=tool`） |
+| **knowledge** | 知识库 CRUD；文档上传 / 列表 / 删除 / 重试；异步 ingest；启用中热更新；删除前引用校验；卡片列表前端 |
+| **workflow** | 工作流 CRUD + nodes/edges；`NodeConfigParser`；简版 run（start→llm→end 等）；前端列表 / 创建页 |
+| **mcp** | Server CRUD；连通性 `test`；**tool_whitelist**（list / call / debug 一致）；`list_bound_tools`；`POST /{id}/debug`；前端列表 + 详情（含调试 Tab） |
+| **运维** | `make start` / `make stop`；Docker Compose MySQL；可选 `python -m app.worker` |
 
 ### 前端已联调页面
 
 - `/login` · `/register` · `/identity`（工作区）
-- `/model-providers`（模型提供商：列表 / 新增编辑 / 连通性测试 / 展开模型）
-- `/agents`（列表含绑定知识库 Tag；新建编辑：模型分组、MCP 工具、**知识库多选**）
-- `/conversation`（选 Agent、建会话、流式发消息）
-- `/knowledge-bases`（**卡片列表**：启用/停用、编辑、删除；点击进文档页）
-- `/knowledge-bases/:kbId/documents`（上传 TXT/MD/PDF、状态轮询、分块预览、失败重试）
-- 占位页：`/workflows` · `/mcp`（后端 workflow CRUD 已就绪，前端管理页待接）
+- `/model-providers`（模型提供商）
+- `/agents`（模型、MCP 工具、知识库多选）
+- `/conversation`（选 Agent、建会话、流式发消息；绑定工具时可触发 MCP）
+- `/knowledge-bases` · `/knowledge-bases/:kbId/documents`
+- `/workflows` · `/workflows/create`
+- `/mcp` · `/mcp/:serverId`（列表调试入口 + 详情调试 Tab）
 
 ### 后续推荐顺序
 
-工作流前端画布 / 执行 → MCP 完整能力 → 对话侧 RAG 检索串联 → …
+对话侧 RAG 检索串联 → 工作流画布 / 更完整节点执行 → 集成测扩到 chat/SSE（fix.md I-P0-04~08）→ …
 
 ## 环境要求
 
@@ -181,33 +186,49 @@ npm run dev
 建议体验顺序：
 
 1. `/login` 登录（表单可预填演示账号）
-2. 「工作区」页点「使用」选中当前工作区（请求头会带 `X-Workspace-Id`）
-3. 「模型」页新增 Provider（OpenAI / OpenAI 兼容 / Claude / Gemini / Ollama），填 Key；可「连通性测试」；若要跑知识库向量化需可用的 **embedding** 模型
-4. 「知识库」页新建知识库 → 点击卡片进入文档页上传 TXT / MD / PDF（需另开 **worker** 消费解析队列）
-5. 「Agent」页新建 Agent：选模型、写 System Prompt、调参数、多选绑定知识库与 MCP 工具；列表可看到绑定的知识库名称
-6. 「对话」页选 Agent 发消息（流式）
+2. 「工作区」页点「使用」选中当前工作区（请求头会带 `X-Workspace-Id`；**非成员会被拒绝**）
+3. 「模型」页新增 Provider（含 `fake` 可离线联调），填 Key；可「连通性测试」；知识库向量化需可用的 **embedding** 模型
+4. 「MCP」页创建 Server（如本地退款 MCP `streamable_http`），配置白名单，可「测试」与「调试」调用工具
+5. 「知识库」页新建 → 文档页上传（需另开 **worker**）
+6. 「Agent」页绑定模型、知识库与 MCP Server
+7. 「对话」页发消息；若模型返回 `tool_calls`，会走 MCP 执行后再回复
 
-> Provider 健康态为 **DOWN** 时，**新建** Agent 绑定该模型会被拒绝；进行中的对话流不会因巡检被取消（仅拦新请求）。编辑 Agent 若未更换模型，可跳过健康再校验。  
-> 知识库**启用中可直接编辑/上传**（热更新）；**删除**前须在 Agent（或工作流）中取消关联，并清空文档。停用后不可再绑定、不可上传。
+> Provider 健康态为 **DOWN** 或已禁用时，**新对话**会被拒绝；进行中的流不会因巡检被取消。  
+> MCP：`tool_whitelist` 非空时，列表与 `call_tool` / debug **一律**只允许白名单内工具。  
+> 知识库启用中可直接编辑/上传；删除前须取消 Agent/工作流关联并清空文档。
 
 ## 主要 API（摘要）
 
-统一信封：`{ "code", "message", "data" }`，成功 `code === "0"`。鉴权：`Authorization: Bearer <token>`；工作区业务另需 `X-Workspace-Id`。
+统一信封：`{ "code", "message", "data" }`，成功 `code === "0"`。鉴权：`Authorization: Bearer <token>`；工作区业务另需 `X-Workspace-Id`（且调用方须为该工作区成员）。
 
 | 模块 | 前缀 | 说明 |
 |------|------|------|
 | identity | `/api/v1/auth` · `/api/v1/workspaces` | 注册登录、工作区 |
 | model_provider | `/api/v1/model-providers` | Provider CRUD、`POST /{id}/test-connection`、`/{id}/models` |
-| agent | `/api/v1/agents` | Agent CRUD（列表含 `knowledge_bases`；创建/更新可传 `knowledge_base_ids`；软删） |
+| agent | `/api/v1/agents` | Agent CRUD（含知识库 / MCP 绑定） |
 | conversation | `/api/v1/conversations` | 会话 CRUD、消息列表、`/{id}/chat`、`/{id}/chat/stream`（SSE） |
-| knowledge | `/api/v1/knowledge` | `/bases` CRUD + `is_enabled`；`/bases/options`；`/bases/{id}/references`；`/bases/{id}/documents` 上传与列表；`/documents/{id}` 详情/删除/retry/chunks |
-| workflow | `/api/v1/workflows` | 工作流 CRUD（含 nodes/edges；更新整图替换；软删级联） |
-| mcp | `/api/v1/mcp-servers` | 启用中的 MCP 选项列表（Agent 工具多选） |
+| knowledge | `/api/v1/knowledge` | bases / documents / chunks / references |
+| workflow | `/api/v1/workflows` | 工作流 CRUD（含 nodes/edges）；run 相关 |
+| mcp | `/api/v1/mcp` | Server CRUD、`POST /{id}/test`、`POST /{id}/debug`、选项列表 |
 | health | `/api/v1/health` | 存活检查 |
 
 大表列表用游标分页 `CursorPage`；对话流式用 SSE（`fetch` + Bearer + POST），**不要**用浏览器 `EventSource`。
 
 完整规则以 [CLAUDE.md](./CLAUDE.md) 为准。
+
+## 测试
+
+约定见 [fix.md](./fix.md)。P0 单测门禁（工作区成员、会话隔离、tool_loop、MCP 白名单、凭证 DOWN/disabled）+ 轻量 HTTP 冒烟，默认可离线跑（LLM / MCP / Milvus mock）。
+
+```bash
+cd backend
+python3 -m pip install -e ".[dev]"   # 含 pytest、pytest-asyncio
+python3 -m pytest tests/ -q
+```
+
+- 用例命名：`should_[期望]_when_[条件]`（`pyproject.toml` 已配置收集 `should_*`）
+- 路径：`tests/modules/<module>/`、`tests/integration/`
+- 禁止单测打真实厂商 / 生产库；完整 chat/SSE 集成见 fix.md §11
 
 ## Make 命令
 

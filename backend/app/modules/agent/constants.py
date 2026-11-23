@@ -16,3 +16,6 @@ MAX_CONTEXT_TURNS_MAX = 200
 
 # 列表缓存键前缀（进程内）
 LIST_CACHE_PREFIX = "agent:list:"
+
+# 单 Agent 最多绑定 MCP 工具数（防止 tools 参数过长影响 LLM）
+MAX_TOOL_BINDINGS = 10

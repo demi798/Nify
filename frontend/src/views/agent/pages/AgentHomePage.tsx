@@ -19,12 +19,12 @@ import {
   NifyFormItem,
   NifyTable,
   confirmDelete,
-} from "@/components";
-import type { NifyFormDialogRef, NifyFormRules, NifyTableRef } from "@/components";
-import { useIsNarrowScreen } from "@/hooks/useMediaQuery";
+} from "@/shared/components";
+import type { NifyFormDialogRef, NifyFormRules, NifyTableRef } from "@/shared/components";
+import { useIsNarrowScreen } from "@/shared/hooks/useMediaQuery";
 import { getAccessToken, getWorkspaceId } from "@/shared/api-client";
 import { PageCard, PageHeader } from "@/shared/components";
-import { notifyError, notifySuccess } from "@/utils/notify";
+import { notifyError, notifySuccess } from "@/shared/notify";
 import {
   createAgent,
   deleteAgent,

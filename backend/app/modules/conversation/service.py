@@ -1,7 +1,7 @@
 """conversation 用例：会话 CRUD + chat / stream_chat。
 
-跨模块仅调 AgentService / ModelProviderService 公开方法与 LLMGateway。
-SSE 长连接：写库拆独立方法；调 LLM 前必须 commit，禁止长事务持有期间调模型。
+跨模块仅调 AgentService / ModelProviderService / McpService 公开方法与 LLMGateway。
+SSE 长连接：写库拆独立方法；调 LLM / MCP 前必须 commit，禁止长事务持有期间外调。
 """
 
 from __future__ import annotations
@@ -9,11 +9,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import new_uuid
+from app.core.db import commit_before_external_io, new_uuid
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppError
 from app.core.pagination import (
@@ -34,6 +35,10 @@ from app.modules.conversation.constants import (
     STATUS_COMPLETED,
     STATUS_FAILED,
 )
+from app.modules.conversation.internal.tool_loop import (
+    append_tool_results,
+    chat_with_tools,
+)
 from app.modules.conversation.models import Conversation, ConversationMessage
 from app.modules.conversation.schemas import (
     ChatIn,
@@ -42,9 +47,12 @@ from app.modules.conversation.schemas import (
     ConversationOut,
     MessageOut,
 )
-from app.modules.model_provider.adapters.base import ChatMessage
-from app.modules.model_provider.internal.gateway import get_llm_gateway
-from app.modules.model_provider.service import ModelProviderService
+from app.modules.mcp.service import McpBoundToolOut, McpService
+from app.modules.model_provider.service import (
+    ChatMessage,
+    ModelProviderService,
+    get_llm_gateway,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +66,12 @@ class ConversationService:
         *,
         agent_service: AgentService,
         model_provider_service: ModelProviderService,
+        mcp_service: McpService | None = None,
     ) -> None:
         self._session = session
         self._agents = agent_service
         self._providers = model_provider_service
+        self._mcp = mcp_service or McpService(session)
 
     # ---------- 会话 CRUD ----------
 
@@ -194,24 +204,45 @@ class ConversationService:
             conversation_id=conv.id,
             content=content,
         )
-        # 结束写事务后再调 LLM
-        await self._session.commit()
+        # 结束写事务后再调 LLM / MCP
+        await commit_before_external_io(self._session)
 
         try:
-            agent, creds, llm_messages = await self._prepare_llm_call(
-                workspace_id=workspace_id, conversation=conv
+            agent, creds, llm_messages, openai_tools, bound_tools = (
+                await self._prepare_llm_call(
+                    workspace_id=workspace_id, conversation=conv
+                )
             )
+            # workflowId 非空时由上游短路；现网 Agent 无该字段则跳过
+            if getattr(agent, "workflow_id", None):
+                raise AppError(
+                    ErrorCode.BAD_REQUEST,
+                    "当前会话应由工作流执行，不走普通对话",
+                )
+
             gateway = get_llm_gateway()
-            result = await gateway.chat(
-                provider=str(creds["provider_type"]),
-                workspace_id=workspace_id,
-                model=agent.model_name,
-                messages=llm_messages,
-                api_key=str(creds.get("api_key") or ""),
-                base_url=creds.get("base_url"),
-                temperature=agent.temperature,
-                max_tokens=agent.max_tokens,
-            )
+            if not openai_tools:
+                # 无工具：与改造前完全一致
+                result = await gateway.chat(
+                    provider=str(creds["provider_type"]),
+                    workspace_id=workspace_id,
+                    model=agent.model_name,
+                    messages=llm_messages,
+                    api_key=str(creds.get("api_key") or ""),
+                    base_url=creds.get("base_url"),
+                    temperature=agent.temperature,
+                    max_tokens=agent.max_tokens,
+                )
+            else:
+                result = await chat_with_tools(
+                    workspace_id=workspace_id,
+                    agent=agent,
+                    creds=creds,
+                    llm_messages=llm_messages,
+                    openai_tools=openai_tools,
+                    bound_tools=bound_tools,
+                    mcp=self._mcp,
+                )
             assistant = await self._insert_assistant_message(
                 workspace_id=workspace_id,
                 conversation_id=conv.id,
@@ -219,7 +250,7 @@ class ConversationService:
                 status=STATUS_COMPLETED,
                 token_count=self._usage_to_token_count(result.usage),
             )
-            await self._session.commit()
+            await commit_before_external_io(self._session)
             return ChatOut(
                 conversation_id=conv.id,
                 user_message=self._to_message_out(user_msg),
@@ -266,11 +297,13 @@ class ConversationService:
             conversation_id=conv.id,
             content=content,
         )
-        await self._session.commit()
+        await commit_before_external_io(self._session)
 
         try:
-            agent, creds, llm_messages = await self._prepare_llm_call(
-                workspace_id=workspace_id, conversation=conv
+            agent, creds, llm_messages, openai_tools, bound_tools = (
+                await self._prepare_llm_call(
+                    workspace_id=workspace_id, conversation=conv
+                )
             )
         except AppError as exc:
             await self._safe_insert_assistant(
@@ -295,6 +328,19 @@ class ConversationService:
             logger.exception("stream_chat prepare failed: %s", exc)
             return
 
+        if getattr(agent, "workflow_id", None):
+            await self._safe_insert_assistant(
+                workspace_id=workspace_id,
+                conversation_id=conv.id,
+                content="",
+                status=STATUS_FAILED,
+            )
+            yield format_sse_error(
+                code=ErrorCode.BAD_REQUEST.value,
+                message="当前会话应由工作流执行，不走普通对话",
+            )
+            return
+
         yield format_sse(
             "meta",
             {
@@ -308,20 +354,65 @@ class ConversationService:
         gateway = get_llm_gateway()
         parts: list[str] = []
         try:
-            stream = gateway.stream_chat(
-                provider=str(creds["provider_type"]),
-                workspace_id=workspace_id,
-                model=agent.model_name,
-                messages=llm_messages,
-                api_key=str(creds.get("api_key") or ""),
-                base_url=creds.get("base_url"),
-                temperature=agent.temperature,
-                max_tokens=agent.max_tokens,
-            )
-            async for delta in stream:
-                if delta.text:
-                    parts.append(delta.text)
-                    yield format_sse("delta", {"text": delta.text})
+            # ---------- 无工具：原有流式路径（保持不变）----------
+            if not openai_tools:
+                stream = gateway.stream_chat(
+                    provider=str(creds["provider_type"]),
+                    workspace_id=workspace_id,
+                    model=agent.model_name,
+                    messages=llm_messages,
+                    api_key=str(creds.get("api_key") or ""),
+                    base_url=creds.get("base_url"),
+                    temperature=agent.temperature,
+                    max_tokens=agent.max_tokens,
+                )
+                async for delta in stream:
+                    if delta.text:
+                        parts.append(delta.text)
+                        yield format_sse("delta", {"text": delta.text})
+            else:
+                # ---------- 有工具：先非流式探测 tool_calls ----------
+                first = await gateway.chat(
+                    provider=str(creds["provider_type"]),
+                    workspace_id=workspace_id,
+                    model=agent.model_name,
+                    messages=llm_messages,
+                    api_key=str(creds.get("api_key") or ""),
+                    base_url=creds.get("base_url"),
+                    temperature=agent.temperature,
+                    max_tokens=agent.max_tokens,
+                    tools=openai_tools,
+                )
+                finish = (first.finish_reason or "").lower()
+                if finish == "tool_calls" or first.tool_calls:
+                    follow_messages = await append_tool_results(
+                        workspace_id=workspace_id,
+                        llm_messages=list(llm_messages),
+                        first=first,
+                        bound_tools=bound_tools,
+                        mcp=self._mcp,
+                    )
+                    # 第二次流式（不再带 tools，避免连环调用）
+                    stream = gateway.stream_chat(
+                        provider=str(creds["provider_type"]),
+                        workspace_id=workspace_id,
+                        model=agent.model_name,
+                        messages=follow_messages,
+                        api_key=str(creds.get("api_key") or ""),
+                        base_url=creds.get("base_url"),
+                        temperature=agent.temperature,
+                        max_tokens=agent.max_tokens,
+                    )
+                    async for delta in stream:
+                        if delta.text:
+                            parts.append(delta.text)
+                            yield format_sse("delta", {"text": delta.text})
+                else:
+                    # stop：把首次完整答复推给前端（等价原流式终点）
+                    text = first.content or ""
+                    if text:
+                        parts.append(text)
+                        yield format_sse("delta", {"text": text})
 
             full = "".join(parts)
             assistant = await self._insert_assistant_message(
@@ -331,7 +422,7 @@ class ConversationService:
                 status=STATUS_COMPLETED,
                 token_count=0,
             )
-            await self._session.commit()
+            await commit_before_external_io(self._session)
             yield format_sse(
                 "done",
                 {
@@ -435,7 +526,7 @@ class ConversationService:
                 content=content,
                 status=status,
             )
-            await self._session.commit()
+            await commit_before_external_io(self._session)
         except Exception:
             logger.exception(
                 "safe insert assistant failed conversation_id=%s status=%s",
@@ -452,6 +543,11 @@ class ConversationService:
     async def _prepare_llm_call(
         self, *, workspace_id: str, conversation: Conversation
     ) -> tuple:
+        """准备 Agent / 凭证 / messages / 可选 tools。
+
+        返回 (agent, creds, llm_messages, openai_tools, bound_tools)。
+        openai_tools 为空列表时调用方必须走无 tools 旧路径。
+        """
         agent = await self._agents.get_agent(
             workspace_id=workspace_id, agent_id=conversation.agent_id
         )
@@ -467,11 +563,32 @@ class ConversationService:
             conversation_id=conversation.id,
             max_turns=agent.max_context_turns,
         )
+        # system_prompt 可含 RAG 检索片段；与 tools 并存不冲突
         llm_messages = self._build_llm_messages(
             system_prompt=agent.system_prompt,
             history=history,
         )
-        return agent, creds, llm_messages
+
+        bound_tools: list[McpBoundToolOut] = []
+        openai_tools: list[dict[str, Any]] = []
+        tool_ids = list(agent.tool_ids or [])
+        if tool_ids:
+            bound_tools = await self._mcp.list_bound_tools(
+                workspace_id=workspace_id, server_ids=tool_ids
+            )
+            openai_tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description or t.name,
+                        "parameters": t.input_schema
+                        or {"type": "object", "properties": {}},
+                    },
+                }
+                for t in bound_tools
+            ]
+        return agent, creds, llm_messages, openai_tools, bound_tools
 
     async def _load_recent_messages(
         self,
@@ -506,6 +623,7 @@ class ConversationService:
         system_prompt: str | None,
         history: list[ConversationMessage],
     ) -> list[ChatMessage]:
+        """组装 messages；system 可含 RAG 文本，与后续 tools 参数独立。"""
         out: list[ChatMessage] = []
         if system_prompt and system_prompt.strip():
             out.append(ChatMessage(role=ROLE_SYSTEM, content=system_prompt.strip()))
@@ -517,11 +635,17 @@ class ConversationService:
         self, workspace_id: str, conversation_id: str
     ) -> Conversation:
         conversation_id = require_uuid(conversation_id, field="id")
-        row = await self._session.get(Conversation, conversation_id)
+        stmt = (
+            select(Conversation)
+            .where(
+                Conversation.workspace_id == workspace_id,
+                Conversation.id == conversation_id,
+            )
+            .limit(1)
+        )
+        row = await self._session.scalar(stmt)
         if row is None:
             raise AppError(ErrorCode.NOT_FOUND, "会话不存在")
-        if row.workspace_id != workspace_id:
-            raise AppError(ErrorCode.FORBIDDEN, "资源不属于当前工作区")
         return row
 
     @staticmethod

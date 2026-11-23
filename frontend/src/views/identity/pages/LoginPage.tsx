@@ -8,7 +8,7 @@ import {
   setStoredUser,
   setWorkspaceId,
 } from "@/shared/api-client";
-import { notifyError, notifySuccess } from "@/utils/notify";
+import { notifyError, notifySuccess } from "@/shared/notify";
 
 /** 演示账号（与后端 seed 一致） */
 const DEMO_LOGIN = {

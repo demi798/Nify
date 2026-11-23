@@ -1,13 +1,18 @@
-"""workflow 用例：CRUD；图结构拆分写入 workflow / nodes / edges（同一事务）。"""
+"""workflow 用例：CRUD + 简版执行引擎门面。
+
+conversation 日后可调用 ``run_workflow``；本模块引擎侧只 flush，不主动 commit。
+"""
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import new_uuid, soft_delete
+from app.core.db import new_uuid, soft_delete, utc_now
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppError
 from app.core.pagination import (
@@ -17,7 +22,27 @@ from app.core.pagination import (
     decode_cursor,
 )
 from app.core.rules import reject_if, require_non_blank, require_uuid
-from app.modules.workflow.models import Workflow, WorkflowEdge, WorkflowNode
+from app.modules.agent.service import AgentService
+from app.modules.knowledge.service import KnowledgeService
+from app.modules.model_provider.service import ModelProviderService
+from app.modules.workflow.constants import (
+    ERROR_MESSAGE_MAX_LENGTH,
+    RUN_STATUS_CANCELLED,
+    RUN_STATUS_FAILED,
+    RUN_STATUS_PENDING,
+    RUN_STATUS_RUNNING,
+    RUN_STATUS_SUCCEEDED,
+)
+from app.modules.workflow.internal.engine.context import RunContext
+from app.modules.workflow.internal.engine.graph import build_runtime_graph
+from app.modules.workflow.internal.engine.pool import VariablePool
+from app.modules.workflow.internal.engine.runner import GraphRunner
+from app.modules.workflow.models import (
+    Workflow,
+    WorkflowEdge,
+    WorkflowNode,
+    WorkflowRun,
+)
 from app.modules.workflow.node_config import NodeConfigParser
 from app.modules.workflow.schemas import (
     WorkflowCreate,
@@ -28,15 +53,35 @@ from app.modules.workflow.schemas import (
     WorkflowNodeIn,
     WorkflowNodeOut,
     WorkflowNodePosition,
+    WorkflowRunCreate,
+    WorkflowRunOut,
     WorkflowUpdate,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class WorkflowService:
-    """工作流定义服务。"""
+    """工作流定义与执行服务。"""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        agent_service: AgentService | None = None,
+        knowledge_service: KnowledgeService | None = None,
+        model_provider_service: ModelProviderService | None = None,
+    ) -> None:
         self._session = session
+        self._providers = model_provider_service or ModelProviderService(session)
+        self._knowledge = knowledge_service or KnowledgeService(
+            session, model_provider_service=self._providers
+        )
+        self._agents = agent_service or AgentService(
+            session,
+            model_provider_service=self._providers,
+            knowledge_service=self._knowledge,
+        )
 
     async def list_workflows_page(
         self, *, workspace_id: str, params: CursorParams
@@ -191,6 +236,169 @@ class WorkflowService:
         )
         soft_delete(row)
         await self._session.flush()
+
+    # ---------- 运行 ----------
+
+    async def get_run(
+        self, *, workspace_id: str, run_id: str
+    ) -> WorkflowRunOut:
+        row = await self._get_run_entity(workspace_id, run_id)
+        return self._to_run_out(row)
+
+    async def list_runs_page(
+        self,
+        *,
+        workspace_id: str,
+        workflow_id: str | None = None,
+        params: CursorParams,
+    ) -> CursorPage[WorkflowRunOut]:
+        """运行列表（游标分页；禁止 OFFSET）。"""
+        limit = params.limit
+        stmt = select(WorkflowRun).where(WorkflowRun.workspace_id == workspace_id)
+        if workflow_id:
+            wid = require_uuid(workflow_id, field="workflow_id")
+            stmt = stmt.where(WorkflowRun.workflow_id == wid)
+        if params.cursor:
+            cursor_at, cursor_id = decode_cursor(params.cursor)
+            stmt = stmt.where(
+                or_(
+                    WorkflowRun.created_at < cursor_at,
+                    and_(
+                        WorkflowRun.created_at == cursor_at,
+                        WorkflowRun.id < cursor_id,
+                    ),
+                )
+            )
+        stmt = stmt.order_by(
+            WorkflowRun.created_at.desc(), WorkflowRun.id.desc()
+        ).limit(limit + 1)
+        rows = list((await self._session.scalars(stmt)).all())
+        items = [self._to_run_out(r) for r in rows]
+        return build_cursor_page(
+            items,
+            limit,
+            created_at_of=lambda item: item.created_at,
+            id_of=lambda item: item.id,
+        )
+
+    async def run_workflow(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        workflow_id: str,
+        body: WorkflowRunCreate,
+    ) -> WorkflowRunOut:
+        """执行门面：建 run → running → GraphRunner → 写 output/status。
+
+        仅 flush；若外层 conversation 需要可见性，由调用方决定 commit。
+        """
+        wf = await self._get_workflow_entity(workspace_id, workflow_id)
+        if not wf.is_enabled:
+            raise AppError(ErrorCode.FORBIDDEN, "工作流已禁用")
+
+        inputs: dict[str, Any] = {
+            "query": body.query,
+            "conversation_id": body.conversation_id,
+            "extra": dict(body.extra or {}),
+        }
+        run = WorkflowRun(
+            id=new_uuid(),
+            workspace_id=workspace_id,
+            workflow_id=wf.id,
+            status=RUN_STATUS_PENDING,
+            input=inputs,
+            output=None,
+            error_message=None,
+            started_at=None,
+            finished_at=None,
+            created_by=user_id,
+        )
+        self._session.add(run)
+        await self._session.flush()
+
+        run.status = RUN_STATUS_RUNNING
+        run.started_at = utc_now()
+        await self._session.flush()
+
+        try:
+            node_rows = list(
+                (
+                    await self._session.scalars(
+                        select(WorkflowNode)
+                        .where(
+                            WorkflowNode.workspace_id == workspace_id,
+                            WorkflowNode.workflow_id == wf.id,
+                        )
+                        .order_by(
+                            WorkflowNode.created_at.asc(), WorkflowNode.id.asc()
+                        )
+                    )
+                ).all()
+            )
+            edge_rows = list(
+                (
+                    await self._session.scalars(
+                        select(WorkflowEdge)
+                        .where(
+                            WorkflowEdge.workspace_id == workspace_id,
+                            WorkflowEdge.workflow_id == wf.id,
+                        )
+                        .order_by(
+                            WorkflowEdge.created_at.asc(), WorkflowEdge.id.asc()
+                        )
+                    )
+                ).all()
+            )
+            graph = build_runtime_graph(nodes=node_rows, edges=edge_rows)
+            pool = VariablePool(
+                query=body.query,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                conversation_id=body.conversation_id,
+                extra=dict(body.extra or {}),
+            )
+            ctx = RunContext(
+                session=self._session,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                pool=pool,
+                agents=self._agents,
+                knowledge=self._knowledge,
+                providers=self._providers,
+            )
+            output = await GraphRunner().run(graph=graph, ctx=ctx)
+            run.status = RUN_STATUS_SUCCEEDED
+            run.output = output
+            run.error_message = None
+            run.finished_at = utc_now()
+            await self._session.flush()
+        except asyncio.CancelledError:
+            run.status = RUN_STATUS_CANCELLED
+            run.error_message = self._clip_error("运行已取消")
+            run.finished_at = utc_now()
+            await self._session.flush()
+            raise
+        except AppError as exc:
+            run.status = RUN_STATUS_FAILED
+            run.error_message = self._clip_error(exc.message)
+            run.finished_at = utc_now()
+            await self._session.flush()
+            # 运行失败仍返回 run 记录（HTTP 201 + status=failed），不抛给外层
+            logger.info(
+                "workflow run failed run_id=%s code=%s msg=%s",
+                run.id,
+                exc.code,
+                exc.message,
+            )
+        except Exception as exc:
+            logger.exception("workflow run unexpected error run_id=%s", run.id)
+            run.status = RUN_STATUS_FAILED
+            run.error_message = self._clip_error(str(exc) or "工作流执行失败")
+            run.finished_at = utc_now()
+            await self._session.flush()
+
+        return self._to_run_out(run)
 
     # ---------- 图读写 ----------
 
@@ -358,6 +566,41 @@ class WorkflowService:
         if row.workspace_id != workspace_id:
             raise AppError(ErrorCode.FORBIDDEN, "资源不属于当前工作区")
         return row
+
+    async def _get_run_entity(
+        self, workspace_id: str, run_id: str
+    ) -> WorkflowRun:
+        run_id = require_uuid(run_id, field="id")
+        row = await self._session.get(WorkflowRun, run_id)
+        if row is None:
+            raise AppError(ErrorCode.NOT_FOUND, "运行记录不存在")
+        if row.workspace_id != workspace_id:
+            raise AppError(ErrorCode.FORBIDDEN, "资源不属于当前工作区")
+        return row
+
+    @staticmethod
+    def _clip_error(message: str) -> str:
+        text = (message or "").strip()
+        if len(text) > ERROR_MESSAGE_MAX_LENGTH:
+            return text[: ERROR_MESSAGE_MAX_LENGTH - 1] + "…"
+        return text
+
+    @staticmethod
+    def _to_run_out(row: WorkflowRun) -> WorkflowRunOut:
+        return WorkflowRunOut(
+            id=row.id,
+            workspace_id=row.workspace_id,
+            workflow_id=row.workflow_id,
+            status=row.status,
+            input=dict(row.input) if isinstance(row.input, dict) else row.input,
+            output=dict(row.output) if isinstance(row.output, dict) else row.output,
+            error_message=row.error_message,
+            started_at=row.started_at,
+            finished_at=row.finished_at,
+            created_by=row.created_by,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
     async def _assert_name_unique(
         self,

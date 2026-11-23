@@ -50,9 +50,28 @@ def _map_http_error(status_code: int, body: str) -> AppError:
     return AppError(ErrorCode.EXTERNAL_SERVICE_ERROR, f"模型服务错误：{snippet or status_code}")
 
 
+def _message_to_openai(m: ChatMessage) -> dict[str, Any]:
+    """单条消息转 OpenAI 形态（含 tool / tool_calls）。"""
+    item: dict[str, Any] = {"role": m.role}
+    # tool_calls 回合允许 content 为 null/空
+    if m.tool_calls:
+        item["tool_calls"] = m.tool_calls
+        if m.content is not None and str(m.content) != "":
+            item["content"] = m.content
+        else:
+            item["content"] = None
+    else:
+        item["content"] = m.content if m.content is not None else ""
+    if m.tool_call_id:
+        item["tool_call_id"] = m.tool_call_id
+    if m.name:
+        item["name"] = m.name
+    return item
+
+
 def build_chat_payload(request: ChatRequest, *, stream: bool = True) -> dict[str, Any]:
     """构造 chat/completions 请求体。"""
-    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    messages = [_message_to_openai(m) for m in request.messages]
     payload: dict[str, Any] = {
         "model": request.model,
         "messages": messages,
@@ -62,6 +81,9 @@ def build_chat_payload(request: ChatRequest, *, stream: bool = True) -> dict[str
         payload["temperature"] = request.temperature
     if request.max_tokens is not None:
         payload["max_tokens"] = request.max_tokens
+    # 仅当显式传入 tools 时附带，避免空列表改变无工具路径行为
+    if request.tools:
+        payload["tools"] = request.tools
     return payload
 
 
@@ -158,12 +180,21 @@ async def chat_completions(
             content = ""
         elif not isinstance(content, str):
             content = str(content)
+        raw_calls = message.get("tool_calls")
+        tool_calls: list[dict[str, Any]] | None = None
+        if isinstance(raw_calls, list) and raw_calls:
+            tool_calls = [c for c in raw_calls if isinstance(c, dict)]
         usage = data.get("usage")
         usage_dict = usage if isinstance(usage, dict) else None
+        finish = choice0.get("finish_reason")
+        # 部分厂商只回 tool_calls 不标 finish_reason
+        if tool_calls and not finish:
+            finish = "tool_calls"
         return ChatResponse(
             content=content,
-            finish_reason=choice0.get("finish_reason"),
+            finish_reason=finish,
             usage=usage_dict,
+            tool_calls=tool_calls,
             raw=data if isinstance(data, dict) else {},
         )
     except AppError:
@@ -208,8 +239,8 @@ async def probe_chat_completions(
         raise AppError(ErrorCode.LLM_UNAVAILABLE, "模型连接失败") from exc
 
 
-def messages_to_openai(messages: list[ChatMessage]) -> list[dict[str, str]]:
-    return [{"role": m.role, "content": m.content} for m in messages]
+def messages_to_openai(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+    return [_message_to_openai(m) for m in messages]
 
 
 async def create_embeddings(

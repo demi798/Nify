@@ -906,19 +906,37 @@ class ModelProviderService:
         return result
 
     async def _get_provider_entity(self, workspace_id: str, provider_id: str) -> Provider:
-        provider = await self._session.get(Provider, provider_id)
+        provider_id = require_uuid(provider_id, field="id")
+        stmt = (
+            select(Provider)
+            .where(
+                Provider.workspace_id == workspace_id,
+                Provider.id == provider_id,
+            )
+            .limit(1)
+        )
+        provider = await self._session.scalar(stmt)
         if provider is None:
             raise AppError(ErrorCode.NOT_FOUND, "提供商不存在")
-        require_workspace_match(provider.workspace_id, workspace_id)
         return provider
 
     async def _get_model_entity(
         self, workspace_id: str, provider_id: str, model_id: str
     ) -> ProviderModel:
-        model = await self._session.get(ProviderModel, model_id)
-        if model is None or model.provider_id != provider_id:
+        model_id = require_uuid(model_id, field="id")
+        provider_id = require_uuid(provider_id, field="provider_id")
+        stmt = (
+            select(ProviderModel)
+            .where(
+                ProviderModel.workspace_id == workspace_id,
+                ProviderModel.provider_id == provider_id,
+                ProviderModel.id == model_id,
+            )
+            .limit(1)
+        )
+        model = await self._session.scalar(stmt)
+        if model is None:
             raise AppError(ErrorCode.NOT_FOUND, "模型不存在")
-        require_workspace_match(model.workspace_id, workspace_id)
         return model
 
     @staticmethod
@@ -1005,3 +1023,17 @@ class ModelProviderService:
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
+
+
+# ── 跨模块公开出口（禁止他模块 import adapters / internal / schemas）──
+
+from app.modules.model_provider.internal.gateway import (  # noqa: E402
+    get_llm_gateway,
+)
+from app.shared.llm import (  # noqa: E402
+    ChatMessage,
+    ChatResponse,
+    StreamDelta,
+)
+
+# EnabledModelBinding 已在上方 from schemas 导入，供 agent 等模块经 service 引用

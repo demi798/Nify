@@ -219,6 +219,15 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         await session.close()
 
 
+async def commit_before_external_io(session: AsyncSession) -> None:
+    """外调 LLM / MCP / 对象存储前结束写事务。
+
+    业务 Service **禁止**直接 ``session.commit()``；仅允许调用本函数。
+    请求结束时 ``get_session`` 仍会再次 commit（空事务无害）。
+    """
+    await session.commit()
+
+
 @asynccontextmanager
 async def session_context() -> AsyncIterator[AsyncSession]:
     """非请求路径（启动种子等）使用的 session 作用域。"""
