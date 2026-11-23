@@ -166,7 +166,10 @@ export async function streamChat(
   let buffer = "";
   let eventName = "message";
   let sawDone = false;
-  let streamError: { code: string; message: string } | null = null;
+  // 用容器持有，避免闭包赋值导致 TS 将外层变量收窄为 never
+  const streamErrorBox: {
+    current: { code: string; message: string } | null;
+  } = { current: null };
 
   const dispatch = (event: string, dataRaw: string) => {
     if (!dataRaw) return;
@@ -186,7 +189,7 @@ export async function streamChat(
     } else if (event === "error") {
       const code = String(data.code || "C0003");
       const message = String(data.message || "对话失败");
-      streamError = { code, message };
+      streamErrorBox.current = { code, message };
       handlers.onError?.(code, message);
     }
   };
@@ -215,13 +218,16 @@ export async function streamChat(
   }
 
   // 流结束仍无 done：视为失败，保证上层能给 AI 气泡写入错误文案
-  if (!sawDone && !streamError) {
+  if (!sawDone && !streamErrorBox.current) {
     const code = "C0003";
     const message = "对话未正常结束";
     handlers.onError?.(code, message);
     throw new ApiClientError(code, message);
   }
-  if (streamError) {
-    throw new ApiClientError(streamError.code, streamError.message);
+  if (streamErrorBox.current) {
+    throw new ApiClientError(
+      streamErrorBox.current.code,
+      streamErrorBox.current.message,
+    );
   }
 }

@@ -226,7 +226,8 @@ export function McpDebugPanel({ serverId, tools, toolsError }: Props) {
       }
     }
     if (Object.keys(initials).length) {
-      form.setFieldsValue(initials);
+      // JSON Schema default 类型宽于 Form Store；此处仅预填调试表单
+      form.setFieldsValue(initials as Record<string, string | number | boolean>);
     }
   }, [selectedName, inputSchema, form]);
 

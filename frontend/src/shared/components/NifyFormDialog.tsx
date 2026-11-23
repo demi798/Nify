@@ -38,20 +38,22 @@ export type NifyFormDialogRef<T extends object> = {
   form: FormInstance<T>;
 };
 
-const FormRulesContext = createContext<NifyFormRules<object> | undefined>(
-  undefined,
-);
+const FormRulesContext = createContext<
+  Partial<Record<string, FormRule[]>> | undefined
+>(undefined);
 
-/** 自动合并 Dialog rules 的 Form.Item */
-export function NifyFormItem<T extends object = object>(
-  props: FormItemProps<T> & { name: keyof T & string },
-) {
-  const rulesMap = useContext(FormRulesContext) as NifyFormRules<T> | undefined;
-  const mergedRules = [
-    ...(rulesMap?.[props.name] ?? []),
-    ...(props.rules ?? []),
-  ];
-  return <Form.Item {...props} rules={mergedRules.length ? mergedRules : undefined} />;
+/** 自动合并 Dialog rules 的 Form.Item（避免 FormItemProps<object> 导致 name 沦为 never） */
+export function NifyFormItem(props: FormItemProps) {
+  const rulesMap = useContext(FormRulesContext);
+  const nameKey = typeof props.name === "string" ? props.name : undefined;
+  const fromCtx = nameKey ? rulesMap?.[nameKey] : undefined;
+  const mergedRules = [...(fromCtx ?? []), ...(props.rules ?? [])];
+  return (
+    <Form.Item
+      {...props}
+      rules={mergedRules.length ? mergedRules : undefined}
+    />
+  );
 }
 
 function NifyFormDialogInner<T extends object>(

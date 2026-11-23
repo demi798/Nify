@@ -5,7 +5,7 @@
 目标不是迷你 Dify，而是：可配模型的内部知识问答 Agent + 少量白名单工具 + 简版工作流。
 
 详细编码与架构规范见 [CLAUDE.md](./CLAUDE.md)（唯一规范，改代码前请先读）。  
-单元 / 集成测试约定见 [fix.md](./fix.md)。
+单元 / 集成测试约定见 [FIX.md](./FIX.md)。
 
 ## 技术栈
 
@@ -14,8 +14,7 @@
 | 后端 | Python 3.11+ / FastAPI / SQLAlchemy(async) / Alembic |
 | 前端 | React 18 / Vite / Ant Design / TypeScript |
 | 数据 | MySQL 8 / Redis / Milvus Standalone（向量） |
-| 测试 | pytest + pytest-asyncio（`should_*_when_*` 命名） |
-| 规模 | 一期约 20–50 人内网 |
+| 测试 | pytest + pytest-asyncio（`should_*_when_*` 命名） 
 
 ## 目录结构
 
@@ -256,4 +255,4 @@ python3 -m app.worker
 
 ## 许可证
 
-Proprietary（内部项目）
+MIT
