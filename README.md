@@ -4,8 +4,8 @@
 
 目标不是迷你 Dify，而是：可配模型的内部知识问答 Agent + 少量白名单工具 + 简版工作流。
 
-详细编码与架构规范见 [CLAUDE.md](./CLAUDE.md)（唯一规范，改代码前请先读）。  
-单元 / 集成测试约定见 [FIX.md](./FIX.md)。
+详细编码与架构规范见 [CLAUDE.md](.claude/CLAUDE.md)（唯一规范，改代码前请先读）。  
+单元 / 集成测试约定见 [FIX.md](.claude/FIX.md)。
 
 ## 技术栈
 
