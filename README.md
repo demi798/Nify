@@ -14,17 +14,20 @@
 | 后端 | Python 3.11+ / FastAPI / SQLAlchemy(async) / Alembic |
 | 前端 | React 18 / Vite / Ant Design / TypeScript |
 | 数据 | MySQL 8 / Redis / Milvus Standalone（向量） |
-| 测试 | pytest + pytest-asyncio（`should_*_when_*` 命名） 
+| 测试 | pytest + pytest-asyncio（`should_*_when_*` 命名） |
+| 容器 | 后端多阶段 Dockerfile（非 root）；前端 Nginx 反代 `/api`（SSE 关缓冲） |
 
 ## 目录结构
 
 ```text
 nify/
 ├── CLAUDE.md              # 项目规范（唯一）
-├── fix.md                 # 单元 / 集成测试规范与用例清单
+├── FIX.md                 # 单元 / 集成测试规范与用例清单
 ├── Makefile               # start / stop / build / package …
 ├── start.sh / stop.sh
 ├── backend/
+│   ├── Dockerfile         # API / Worker 镜像
+│   ├── .dockerignore
 │   ├── app/
 │   │   ├── main.py        # API 入口（只组装，无业务）
 │   │   ├── worker.py      # 异步任务消费入口
@@ -38,6 +41,9 @@ nify/
 │   ├── log/               # 运行日志
 │   └── .env.example
 └── frontend/
+    ├── Dockerfile         # 多阶段：npm build → Nginx
+    ├── nginx.conf         # /api 反代 backend:8080；SSE 长超时
+    ├── .dockerignore
     └── src/
         ├── app/           # 路由与布局
         ├── shared/        # api-client、公共组件、hooks、notify…
@@ -62,7 +68,7 @@ nify/
 | **knowledge** | 知识库 CRUD；文档上传 / 列表 / 删除 / 重试；异步 ingest；启用中热更新；删除前引用校验；卡片列表前端 |
 | **workflow** | 工作流 CRUD + nodes/edges；`NodeConfigParser`；简版 run（start→llm→end 等）；前端列表 / 创建页 |
 | **mcp** | Server CRUD；连通性 `test`；**tool_whitelist**（list / call / debug 一致）；`list_bound_tools`；`POST /{id}/debug`；前端列表 + 详情（含调试 Tab） |
-| **运维** | `make start` / `make stop`；Docker Compose MySQL；可选 `python -m app.worker` |
+| **运维** | `make start` / `make stop`；Docker Compose MySQL；前后端 Dockerfile；可选 `python -m app.worker` |
 
 ### 前端已联调页面
 
@@ -76,7 +82,7 @@ nify/
 
 ### 后续推荐顺序
 
-对话侧 RAG 检索串联 → 工作流画布 / 更完整节点执行 → 集成测扩到 chat/SSE（fix.md I-P0-04~08）→ …
+对话侧 RAG 检索串联 → 工作流画布 / 更完整节点执行 → 集成测扩到 chat/FIX.md I-P0-04~08）→ …
 
 ## 环境要求
 
@@ -172,6 +178,117 @@ npm run dev
 - Vite 将 `/api` 代理到 `http://localhost:8080`（见 `frontend/vite.config.ts`）
 - 也可设置 `frontend/.env` 中的 `VITE_API_BASE_URL`
 
+#### 方式 D：Docker 部署前后端
+
+按顺序执行：**基础设施 → 建网络 → 构建镜像 → 迁移 → 后端（及可选 Worker）→ 前端**。  
+前端 Nginx 固定反代 `http://backend:8080`，因此后端容器名必须为 **`backend`**，且与前端在同一 Docker 网络。
+
+**1）基础设施（MySQL；Redis 本机或容器自备）**
+
+```bash
+# 仓库根目录
+cd backend && docker compose up -d && cd ..
+# MySQL：宿主机 3307 → 容器 3306；库/用户/密码均为 nify
+# Redis：默认连宿主机 6379；若 Redis 也在 Docker，请把下方 NIFY_REDIS_HOST 改成可解析地址
+```
+
+**2）创建专用网络**
+
+```bash
+docker network create nify-net
+# 把已启动的 MySQL 接到同一网络，供 backend 容器用主机名访问
+docker network connect nify-net nify-mysql
+```
+
+**3）构建镜像**
+
+```bash
+# 在仓库根目录 nify/
+docker build -t nify-backend:local -f backend/Dockerfile backend/
+docker build -t nify-frontend:local -f frontend/Dockerfile frontend/
+```
+
+**4）数据库迁移（一次性容器）**
+
+容器内访问 Compose MySQL 用主机名 `nify-mysql`、端口 **3306**（不是宿主机的 3307）：
+
+```bash
+docker run --rm --network nify-net \
+  -e NIFY_MYSQL_HOST=nify-mysql \
+  -e NIFY_MYSQL_PORT=3306 \
+  -e NIFY_MYSQL_USER=nify \
+  -e NIFY_MYSQL_PASSWORD=nify \
+  -e NIFY_MYSQL_DATABASE=nify \
+  -e NIFY_SECRET_KEY='请换成足够长的随机串' \
+  nify-backend:local \
+  alembic upgrade head
+```
+
+**5）启动后端 API**
+
+```bash
+docker run -d --name backend --network nify-net \
+  -p 8080:8080 \
+  -e NIFY_MYSQL_HOST=nify-mysql \
+  -e NIFY_MYSQL_PORT=3306 \
+  -e NIFY_MYSQL_USER=nify \
+  -e NIFY_MYSQL_PASSWORD=nify \
+  -e NIFY_MYSQL_DATABASE=nify \
+  -e NIFY_REDIS_HOST=host.docker.internal \
+  -e NIFY_REDIS_PORT=6379 \
+  -e NIFY_SECRET_KEY='请换成足够长的随机串' \
+  -e NIFY_SEED_DEMO_ACCOUNT=true \
+  -e NIFY_STORAGE_ROOT=/app/data/files \
+  -v nify-files:/app/data/files \
+  nify-backend:local
+
+# 健康检查
+curl -s http://127.0.0.1:8080/api/v1/health
+```
+
+> Linux 上若无 `host.docker.internal`，可加 `--add-host=host.docker.internal:host-gateway`，或把 Redis 也加入 `nify-net` 后改 `NIFY_REDIS_HOST`。
+
+**6）（可选）知识库 Worker**
+
+与 API 共用镜像与存储卷，改入口即可：
+
+```bash
+docker run -d --name nify-worker --network nify-net \
+  -e NIFY_MYSQL_HOST=nify-mysql \
+  -e NIFY_MYSQL_PORT=3306 \
+  -e NIFY_MYSQL_USER=nify \
+  -e NIFY_MYSQL_PASSWORD=nify \
+  -e NIFY_MYSQL_DATABASE=nify \
+  -e NIFY_REDIS_HOST=host.docker.internal \
+  -e NIFY_REDIS_PORT=6379 \
+  -e NIFY_SECRET_KEY='与 API 相同' \
+  -e NIFY_STORAGE_ROOT=/app/data/files \
+  -v nify-files:/app/data/files \
+  nify-backend:local \
+  python -m app.worker
+```
+
+**7）启动前端（Nginx）**
+
+须在后端容器已存在且名为 `backend` 之后启动：
+
+```bash
+docker run -d --name nify-frontend --network nify-net \
+  -p 80:80 \
+  nify-frontend:local
+```
+
+浏览器访问 <http://127.0.0.1>/（页面走同源 `/api`，由 Nginx 反代到 `backend:8080`；已关 buffering、读超时 3600s，适配 SSE / 慢 LLM）。
+
+**停止并清理（按需）**
+
+```bash
+docker stop nify-frontend nify-worker backend
+docker rm nify-frontend nify-worker backend
+# MySQL：cd backend && docker compose down
+# 网络：docker network rm nify-net
+```
+
 ### 5. 演示账号与联调路径
 
 启动且 `NIFY_SEED_DEMO_ACCOUNT=true`（默认）时，幂等写入：
@@ -217,7 +334,7 @@ npm run dev
 
 ## 测试
 
-约定见 [fix.md](./fix.md)。P0 单测门禁（工作区成员、会话隔离、tool_loop、MCP 白名单、凭证 DOWN/disabled）+ 轻量 HTTP 冒烟，默认可离线跑（LLM / MCP / Milvus mock）。
+约定见 [FIX.md](./FIX.md)。P0 单测门禁（工作区成员、会话隔离、tool_loop、MCP 白名单、凭证 DOWN/disabled）+ 轻量 HTTP 冒烟，默认可离线跑（LLM / MCP / Milvus mock）。
 
 ```bash
 cd backend
@@ -227,7 +344,7 @@ python3 -m pytest tests/ -q
 
 - 用例命名：`should_[期望]_when_[条件]`（`pyproject.toml` 已配置收集 `should_*`）
 - 路径：`tests/modules/<module>/`、`tests/integration/`
-- 禁止单测打真实厂商 / 生产库；完整 chat/SSE 集成见 fix.md §11
+- 禁止单测打真实厂商 / 生产库；完整 chat/SSE 集成见 FIX.md §11
 
 ## Make 命令
 
